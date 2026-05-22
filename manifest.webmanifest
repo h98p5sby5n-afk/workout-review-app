@@ -1,0 +1,19 @@
+{
+  "name": "筋トレレビュー",
+  "short_name": "筋トレ",
+  "description": "Advagym CSVを読み込んで、筋トレ履歴を部位・種目・週次で振り返るPWAです。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f7f8",
+  "theme_color": "#2f7d64",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#2f7d64" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="筋トレレビュー" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>筋トレレビュー</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./assets/icon.svg" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <p class="eyebrow">Advagym CSV Review</p>
+            <h1>筋トレ履歴ダッシュボード</h1>
+          </div>
+        </div>
+        <div class="import-panel" id="dropZone">
+          <input id="csvInput" type="file" accept=".csv,text/csv" />
+          <button class="primary-button" id="fileButton" type="button">CSVを選択</button>
+          <span id="fileName" class="file-name">サンプルデータ</span>
+        </div>
+      </header>
+
+      <section class="summary-grid" id="summaryGrid" aria-live="polite"></section>
+
+      <section class="control-strip period-strip" aria-label="フィルター">
+        <label>
+          期間
+          <select id="rangeSelect">
+            <option value="all">全期間</option>
+            <option value="30">直近30日</option>
+            <option value="60">直近60日</option>
+            <option value="90">直近90日</option>
+          </select>
+        </label>
+        <div class="hidden-controls" aria-hidden="true">
+          <select id="bodySelect"></select>
+          <select id="exerciseSelect"></select>
+          <select id="metricSelect">
+            <option value="mainWork">メインセット仕事量</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="panel body-explorer">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Body Part</p>
+            <h2>部位から種目を選ぶ</h2>
+          </div>
+        </div>
+        <div id="bodyTabs" class="body-tabs" role="tablist" aria-label="部位"></div>
+        <div id="exerciseCards" class="exercise-cards"></div>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel trend-panel" id="trendPanel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Progress</p>
+              <h2 id="trendTitle">種目推移</h2>
+            </div>
+            <div id="trendStat" class="mini-stat"></div>
+          </div>
+          <div class="chart-stack">
+            <div class="chart-layer">
+              <div class="chart-layer-head">
+                <strong>総合スコア</strong>
+                <span>推定1RM</span>
+              </div>
+              <div class="chart-frame score">
+                <canvas id="scoreCanvas" width="960" height="260"></canvas>
+              </div>
+            </div>
+            <div class="chart-layer">
+              <div class="chart-layer-head">
+                <strong>回数別重量</strong>
+                <span>回数別の最高使用重量</span>
+              </div>
+              <div class="chart-frame bubble">
+                <canvas id="bubbleCanvas" width="960" height="260"></canvas>
+              </div>
+            </div>
+            <div class="chart-layer">
+              <div class="chart-layer-head">
+                <strong>重量別レップ</strong>
+                <span>使用重量ごとの最高回数</span>
+              </div>
+              <div class="chart-frame reps">
+                <canvas id="repsCanvas" width="960" height="260"></canvas>
+              </div>
+            </div>
+            <div class="chart-layer">
+              <div class="chart-layer-head">
+                <strong>メインセット仕事量</strong>
+                <span>重量 × 回数</span>
+              </div>
+              <div class="chart-frame work">
+                <canvas id="trendCanvas" width="960" height="260"></canvas>
+              </div>
+            </div>
+            <div id="chartTooltip" class="chart-tooltip" hidden></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Muscle Split</p>
+              <h2>部位別サマリー</h2>
+            </div>
+          </div>
+          <div id="bodySummary" class="body-summary"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Weekly Load</p>
+              <h2>週次の量と頻度</h2>
+            </div>
+          </div>
+          <div class="chart-frame compact">
+            <canvas id="weeklyCanvas" width="720" height="280"></canvas>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Highlights</p>
+              <h2>振り返りメモ</h2>
+            </div>
+          </div>
+          <div id="insights" class="insight-list"></div>
+        </article>
+      </section>
+
+      <section class="panel wide">
+        <div class="panel-head table-head">
+          <div>
+            <p class="eyebrow">Exercise Table</p>
+            <h2>種目別の変化</h2>
+          </div>
+          <input id="searchInput" class="search-input" type="search" placeholder="種目検索" />
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>種目</th>
+                <th>部位</th>
+                <th>回数</th>
+                <th>セット</th>
+                <th>総量</th>
+                <th>最大重量</th>
+                <th>推定1RM</th>
+                <th>初回→最新</th>
+                <th>最終日</th>
+              </tr>
+            </thead>
+            <tbody id="exerciseTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="timeline-section">
+        <div class="section-title">
+          <p class="eyebrow">Menu Timeline</p>
+          <h2>メニューの変遷</h2>
+        </div>
+        <div id="timeline" class="timeline"></div>
+      </section>
+    </main>
+
+    <script src="./src/app.js" type="module"></script>
+  </body>
+</html>

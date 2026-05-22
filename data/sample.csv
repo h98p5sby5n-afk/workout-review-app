@@ -1,0 +1,118 @@
+User;Sample User
+Email;sample@example.com
+
+Workout date;Mon Jan 06 2025 10:00:00 GMT+0000 (Coordinated Universal Time)
+Workout name;月曜日 ストレングス
+Total time (min);42
+Total volume (ton);5.36
+Exercise name;Machine Chest Press
+Exercise time (min);10
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;10;35;77.16;90;
+2;10;40;88.18;90;
+3;8;45;99.21;90;
+
+Exercise name;Cable Lat Pulldown
+Exercise time (min);9
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;12;35;77.16;90;
+2;10;42.5;93.7;90;
+3;8;47.5;104.72;90;
+
+Exercise name;Machine Lateral Raise
+Exercise time (min);6
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;12;12.5;27.56;60;
+2;12;15;33.06;60;
+3;10;17.5;38.58;60;
+
+Workout date;Thu Jan 16 2025 10:00:00 GMT+0000 (Coordinated Universal Time)
+Workout name;木曜日 ストレングス
+Total time (min);38
+Total volume (ton);6.15
+Exercise name;Machine Chest Press
+Exercise time (min);9
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;10;40;88.18;90;
+2;10;45;99.21;90;
+3;9;45;99.21;90;
+
+Exercise name;Seated Row
+Exercise time (min);8
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;10;35;77.16;90;
+2;10;40;88.18;90;
+3;9;45;99.21;90;
+
+Exercise name;Leg Press
+Exercise time (min);9
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;12;80;176.37;90;
+2;10;100;220.46;90;
+3;10;110;242.51;90;
+
+Workout date;Sat Jan 25 2025 10:00:00 GMT+0000 (Coordinated Universal Time)
+Workout name;土曜日 有酸素
+Total time (min);35
+Total volume (ton);0
+Exercise name;Treadmill
+Exercise time (min);35
+Set;Distance (m);Distance (miles);Time (sec);Energy (kcal);Rest (sec);
+1;4200;2.61;2100;260;0;
+
+Workout date;Tue Feb 04 2025 10:00:00 GMT+0000 (Coordinated Universal Time)
+Workout name;火曜日 ストレングス
+Total time (min);45
+Total volume (ton);7.34
+Exercise name;Machine Chest Press
+Exercise time (min);10
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;10;45;99.21;90;
+2;9;50;110.23;90;
+3;8;50;110.23;90;
+
+Exercise name;Cable Lat Pulldown
+Exercise time (min);9
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;10;45;99.21;90;
+2;10;50;110.23;90;
+3;8;52.5;115.74;90;
+
+Exercise name;Leg Press
+Exercise time (min);10
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;10;100;220.46;90;
+2;10;115;253.53;90;
+3;8;125;275.58;90;
+
+Workout date;Fri Feb 14 2025 10:00:00 GMT+0000 (Coordinated Universal Time)
+Workout name;金曜日 ストレングス
+Total time (min);41
+Total volume (ton);7.98
+Exercise name;Machine Chest Press
+Exercise time (min);10
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;10;45;99.21;90;
+2;10;50;110.23;90;
+3;8;52.5;115.74;90;
+
+Exercise name;Seated Row
+Exercise time (min);9
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;10;40;88.18;90;
+2;10;45;99.21;90;
+3;9;50;110.23;90;
+
+Exercise name;Machine Lateral Raise
+Exercise time (min);6
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;12;15;33.06;60;
+2;12;17.5;38.58;60;
+3;10;20;44.09;60;
+
+Exercise name;Leg Press
+Exercise time (min);9
+Set;Reps;Weight (kg);Weight (lb);Rest (sec);
+1;10;110;242.51;90;
+2;10;125;275.58;90;
+3;8;135;297.62;90;
