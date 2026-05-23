@@ -608,7 +608,7 @@ tbody tr:hover {
   .chart-frame,
   .chart-frame.score,
   .chart-frame.bubble,
-  .chart-frame.work {
+  .chart-frame.reps {
     height: 240px;
   }
 }
@@ -760,9 +760,30 @@ tbody tr:hover {
 }
 
 .chart-frame.score,
-.chart-frame.bubble,
-.chart-frame.work {
+.chart-frame.bubble {
   height: 260px;
+}
+
+.back-to-body {
+  position: fixed;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  z-index: 20;
+  width: 58px;
+  height: 58px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--strong);
+  color: #fff;
+  box-shadow: 0 16px 34px rgba(21, 33, 43, 0.22);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.back-to-body:active {
+  transform: translateY(1px);
 }
 
 
@@ -885,6 +906,13 @@ tbody tr:hover {
 }
 
 @media (max-width: 740px) {
+  .back-to-body {
+    right: max(14px, env(safe-area-inset-right));
+    bottom: max(14px, env(safe-area-inset-bottom));
+    width: 54px;
+    height: 54px;
+  }
+
   .chart-frame.reps {
     height: 240px;
   }

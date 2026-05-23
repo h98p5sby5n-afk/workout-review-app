@@ -44,9 +44,6 @@
         <div class="hidden-controls" aria-hidden="true">
           <select id="bodySelect"></select>
           <select id="exerciseSelect"></select>
-          <select id="metricSelect">
-            <option value="mainWork">メインセット仕事量</option>
-          </select>
         </div>
       </section>
 
@@ -82,8 +79,8 @@
             </div>
             <div class="chart-layer">
               <div class="chart-layer-head">
-                <strong>回数別重量</strong>
-                <span>回数別の最高使用重量</span>
+                <strong>回数推移</strong>
+                <span>メインセットの回数</span>
               </div>
               <div class="chart-frame bubble">
                 <canvas id="bubbleCanvas" width="960" height="260"></canvas>
@@ -91,20 +88,11 @@
             </div>
             <div class="chart-layer">
               <div class="chart-layer-head">
-                <strong>重量別レップ</strong>
-                <span>使用重量ごとの最高回数</span>
+                <strong>重量推移</strong>
+                <span>メインセットの重量</span>
               </div>
               <div class="chart-frame reps">
                 <canvas id="repsCanvas" width="960" height="260"></canvas>
-              </div>
-            </div>
-            <div class="chart-layer">
-              <div class="chart-layer-head">
-                <strong>メインセット仕事量</strong>
-                <span>重量 × 回数</span>
-              </div>
-              <div class="chart-frame work">
-                <canvas id="trendCanvas" width="960" height="260"></canvas>
               </div>
             </div>
             <div id="chartTooltip" class="chart-tooltip" hidden></div>
@@ -180,6 +168,7 @@
         <div id="timeline" class="timeline"></div>
       </section>
     </main>
+    <button id="backToBodyButton" class="back-to-body" type="button" aria-label="部位選択に戻る">TOP</button>
 
     <script src="./src/app.js" type="module"></script>
   </body>

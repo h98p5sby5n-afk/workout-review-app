@@ -33,7 +33,7 @@ const state = {
   metric: "mainWork",
   search: "",
   trendPoints: [],
-  chartPoints: { score: [], bubble: [], reps: [], work: [] }
+  chartPoints: { score: [], mainReps: [], mainWeight: [] }
 };
 
 const els = {
@@ -45,7 +45,6 @@ const els = {
   scoreCanvas: document.querySelector("#scoreCanvas"),
   bubbleCanvas: document.querySelector("#bubbleCanvas"),
   repsCanvas: document.querySelector("#repsCanvas"),
-  trendCanvas: document.querySelector("#trendCanvas"),
   weeklyCanvas: document.querySelector("#weeklyCanvas"),
   trendTitle: document.querySelector("#trendTitle"),
   trendStat: document.querySelector("#trendStat"),
@@ -56,12 +55,13 @@ const els = {
   rangeSelect: document.querySelector("#rangeSelect"),
   bodySelect: document.querySelector("#bodySelect"),
   exerciseSelect: document.querySelector("#exerciseSelect"),
-  metricSelect: document.querySelector("#metricSelect"),
   searchInput: document.querySelector("#searchInput"),
   csvInput: document.querySelector("#csvInput"),
   fileButton: document.querySelector("#fileButton"),
   fileName: document.querySelector("#fileName"),
-  dropZone: document.querySelector("#dropZone")
+  dropZone: document.querySelector("#dropZone"),
+  backToBodyButton: document.querySelector("#backToBodyButton"),
+  bodyExplorer: document.querySelector(".body-explorer")
 };
 
 const numberFmt = new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 });
@@ -608,8 +608,8 @@ function renderTrend(workouts) {
 
   let bestE1rm = 0;
   const scoreSeries = [];
-  const bubbleSeries = [];
-  const workSeries = [];
+  const repSeries = [];
+  const weightSeries = [];
 
   records.forEach((record) => {
     const mainSet = record.metrics.mainSet;
@@ -629,24 +629,22 @@ function renderTrend(workouts) {
       });
     }
     if (mainSet && Number.isFinite(mainSet.weightKg) && Number.isFinite(mainSet.reps)) {
-      bubbleSeries.push({
+      repSeries.push({
         date: record.date,
         label: shortDateFmt.format(record.date),
-        weightKg: mainSet.weightKg,
-        reps: mainSet.reps,
-        workKg: mainSet.volumeKg,
+        value: mainSet.reps,
+        metric: "reps",
         e1rm,
         isPr,
         mainSet,
         record
       });
-    }
-    if (Number.isFinite(record.metrics.mainWorkKg)) {
-      workSeries.push({
+      weightSeries.push({
         date: record.date,
         label: shortDateFmt.format(record.date),
-        value: record.metrics.mainWorkKg,
-        metric: "mainWork",
+        value: mainSet.weightKg,
+        metric: "topWeight",
+        e1rm,
         mainSet,
         isPr,
         record
@@ -655,7 +653,7 @@ function renderTrend(workouts) {
   });
 
   els.trendTitle.textContent = state.exercise || "種目推移";
-  els.trendStat.innerHTML = buildThreeLayerStat(scoreSeries, workSeries);
+  els.trendStat.innerHTML = buildThreeLayerStat(scoreSeries, repSeries, weightSeries);
 
   const color = BODY_COLORS[records[0]?.body] || "#3b6ea8";
   const timeDomain = getTimeDomain(records.map((record) => record.date));
@@ -666,21 +664,18 @@ function renderTrend(workouts) {
     pointKey: "score",
     timeDomain
   });
-  drawRepWeightChart(els.bubbleCanvas, bubbleSeries, {
+  drawLineChart(els.bubbleCanvas, repSeries, {
+    metric: "reps",
     color,
-    pointKey: "bubble",
+    label: "メインセット回数",
+    pointKey: "mainReps",
     timeDomain
   });
-  drawWeightRepsChart(els.repsCanvas, bubbleSeries, {
+  drawLineChart(els.repsCanvas, weightSeries, {
+    metric: "topWeight",
     color,
-    pointKey: "reps",
-    timeDomain
-  });
-  drawLineChart(els.trendCanvas, workSeries, {
-    metric: "mainWork",
-    color,
-    label: "メインセット仕事量",
-    pointKey: "work",
+    label: "メインセット重量",
+    pointKey: "mainWeight",
     timeDomain
   });
 }
@@ -1340,16 +1335,17 @@ function buildTrendStat(series, metric) {
   `;
 }
 
-function buildThreeLayerStat(scoreSeries, workSeries) {
-  if (!scoreSeries.length && !workSeries.length) return `<strong>—</strong><span>データなし</span>`;
+function buildThreeLayerStat(scoreSeries, repSeries, weightSeries) {
+  if (!scoreSeries.length && !repSeries.length && !weightSeries.length) return `<strong>—</strong><span>データなし</span>`;
   const score = scoreSeries[scoreSeries.length - 1];
   const scoreFirst = scoreSeries[0];
   const scoreBest = scoreSeries.length ? Math.max(...scoreSeries.map((point) => point.value)) : null;
-  const work = workSeries[workSeries.length - 1];
+  const reps = repSeries[repSeries.length - 1];
+  const weight = weightSeries[weightSeries.length - 1];
   const scoreDelta = score && scoreFirst ? score.value - scoreFirst.value : null;
   return `
     <strong>${score ? formatKg(score.value) : "—"}</strong>
-    <span>推定1RM PR ${formatKg(scoreBest)} / ${formatDelta(scoreDelta, "e1rm")} / 最新仕事量 ${work ? formatWork(work.value) : "—"}</span>
+    <span>推定1RM PR ${formatKg(scoreBest)} / ${formatDelta(scoreDelta, "e1rm")} / 最新 ${reps ? numberFmt.format(reps.value) : "—"}回 ${weight ? formatKg(weight.value) : "—"}</span>
   `;
 }
 
@@ -1359,7 +1355,17 @@ function buildTrendTooltip(point) {
   const mainSet = data.mainSet;
   const lines = [`<strong>${escapeHtml(dateFmt.format(record.date))}</strong>`];
 
-  if (point.kind === "bubble") {
+  if (point.kind === "mainReps") {
+    lines.push(`メインセット回数: ${escapeHtml(numberFmt.format(data.value))}回${data.isPr ? " / 推定1RM更新" : ""}`);
+    if (mainSet) {
+      lines.push(`<span>${escapeHtml(numberFmt.format(mainSet.reps))}回 x ${escapeHtml(decimalFmt.format(mainSet.weightKg))}kg</span>`);
+    }
+  } else if (point.kind === "mainWeight") {
+    lines.push(`メインセット重量: ${escapeHtml(formatKg(data.value))}${data.isPr ? " / 推定1RM更新" : ""}`);
+    if (mainSet) {
+      lines.push(`<span>${escapeHtml(numberFmt.format(mainSet.reps))}回 x ${escapeHtml(decimalFmt.format(mainSet.weightKg))}kg</span>`);
+    }
+  } else if (point.kind === "bubble") {
     lines.push(`${escapeHtml(numberFmt.format(data.repCount))}回ライン: ${escapeHtml(formatKg(data.value))}${data.updated ? " 更新" : ""}`);
     if (data.source) {
       lines.push(`<span>メインセット ${escapeHtml(numberFmt.format(data.source.reps))}回 x ${escapeHtml(decimalFmt.format(data.source.weightKg))}kg</span>`);
@@ -1577,7 +1583,6 @@ function loadCsv(text, fileName, options = {}) {
   state.metric = "mainWork";
   state.search = "";
   els.rangeSelect.value = state.range;
-  els.metricSelect.value = state.metric;
   els.searchInput.value = "";
   if (options.persist) {
     writeStorage(STORED_CSV_KEY, text);
@@ -1631,10 +1636,6 @@ els.bodySelect.addEventListener("change", (event) => {
 els.exerciseSelect.addEventListener("change", (event) => {
   selectExercise(event.target.value);
 });
-els.metricSelect.addEventListener("change", (event) => {
-  state.metric = event.target.value;
-  renderAll();
-});
 els.searchInput.addEventListener("input", (event) => {
   state.search = event.target.value;
   renderExerciseTable(getRangeWorkouts());
@@ -1652,6 +1653,11 @@ els.exerciseCards.addEventListener("click", (event) => {
   const button = event.target.closest("[data-exercise]");
   if (!button) return;
   selectExercise(button.dataset.exercise, true);
+});
+
+els.backToBodyButton.addEventListener("click", () => {
+  if (!els.bodyExplorer) return;
+  els.bodyExplorer.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
 els.dropZone.addEventListener("dragover", (event) => {
@@ -1691,9 +1697,8 @@ function bindChartTooltip(canvas, pointKey) {
 }
 
 bindChartTooltip(els.scoreCanvas, "score");
-bindChartTooltip(els.bubbleCanvas, "bubble");
-bindChartTooltip(els.repsCanvas, "reps");
-bindChartTooltip(els.trendCanvas, "work");
+bindChartTooltip(els.bubbleCanvas, "mainReps");
+bindChartTooltip(els.repsCanvas, "mainWeight");
 
 window.addEventListener("resize", () => renderAll());
 
