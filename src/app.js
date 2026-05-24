@@ -1,5 +1,60 @@
 const BODY_ORDER = ["胸", "背中", "肩", "腕", "脚", "体幹", "有酸素", "その他"];
 const MAIN_SET_SUMMARY_BODIES = ["胸", "肩", "背中"];
+const DETAIL_TRACKED_BODIES = new Set(MAIN_SET_SUMMARY_BODIES);
+const MUSCLE_DETAILS = {
+  chestDelt: {
+    label: "胸+三角筋前部",
+    target: "6-10",
+    color: "#ba4a4a"
+  },
+  medialDelt: {
+    label: "中部三角筋",
+    target: "6-10",
+    color: "#b7791f"
+  },
+  rearDeltTrap: {
+    label: "後部三角筋・僧帽筋中下部",
+    target: "4-8",
+    color: "#8762a9"
+  },
+  lat: {
+    label: "広背筋",
+    target: "6-10",
+    color: "#3b6ea8"
+  },
+  erector: {
+    label: "脊柱起立筋",
+    target: "2-6",
+    color: "#2f7d64"
+  }
+};
+const MAIN_SET_DETAIL_GROUPS = {
+  胸: ["chestDelt"],
+  肩: ["medialDelt", "rearDeltTrap"],
+  背中: ["lat", "rearDeltTrap", "erector"]
+};
+const MUSCLE_DETAIL_RULES = [
+  {
+    id: "erector",
+    pattern: /back extension|hyperextension|バックエクステンション|バックエクステ|ハイパーエクステンション/
+  },
+  {
+    id: "rearDeltTrap",
+    pattern: /rear delt|rear-delt|rear raise|face pull|shrug|row|リアレイズ|フェイスプル/
+  },
+  {
+    id: "medialDelt",
+    pattern: /lateral raise|side\s*raise|shoulder press|iso lateral shoulder press|サイドレイズ|ショルダープレス/
+  },
+  {
+    id: "lat",
+    pattern: /lat|pulldown|pull down|chin-up|pullover|ラット|プルダウン/
+  },
+  {
+    id: "chestDelt",
+    pattern: /chest|incline press|decline bench|bench press|pec|fly|dip|チェスト|インクライン/
+  }
+];
 const ACTIVE_EXERCISE_DAYS = 90;
 const BODY_COLORS = {
   胸: "#ba4a4a",
@@ -123,6 +178,25 @@ function classifyBody(rawName) {
   if (/lat|pulldown|pull down|chin-up|row|pullover|high row|ラット|ロウ/.test(name)) return "背中";
   if (/chest|incline press|bench|pec|fly|dip|press|チェスト|インクライン/.test(name)) return "胸";
   return "その他";
+}
+
+function classifyMuscleDetail(rawName) {
+  const name = rawName.toLowerCase();
+  const rule = MUSCLE_DETAIL_RULES.find((item) => item.pattern.test(name));
+  if (!rule) return null;
+  return {
+    id: rule.id,
+    ...MUSCLE_DETAILS[rule.id]
+  };
+}
+
+function getMuscleDetailMarkup(name, body) {
+  if (!DETAIL_TRACKED_BODIES.has(body)) return "";
+  const detail = classifyMuscleDetail(name);
+  const className = detail ? "exercise-detail-tag" : "exercise-detail-tag undefined";
+  const label = detail ? `細分類 ${detail.label}` : "細分類 未定義";
+  const style = detail ? ` style="--detail-color:${detail.color};"` : "";
+  return `<span class="${className}"${style}>${escapeHtml(label)}</span>`;
 }
 
 function parseAdvagymCsv(text) {
@@ -373,6 +447,7 @@ function buildExerciseStats(workouts) {
     const existing = map.get(record.name) || {
       name: record.name,
       body: record.body,
+      detail: classifyMuscleDetail(record.name),
       type: record.type,
       loadMode: record.loadMode,
       sessions: 0,
@@ -486,12 +561,14 @@ function renderExerciseCards(workouts) {
     .map((stat, index) => {
       const selected = stat.name === state.exercise ? " selected" : "";
       const delta = getLatestDelta(stat, "bestMainWorkKg");
+      const detailMarkup = getMuscleDetailMarkup(stat.name, stat.body);
       return `
         <button class="exercise-card${selected}" type="button" data-exercise="${escapeAttr(stat.name)}">
           <span class="exercise-rank">${index + 1}</span>
           <span class="exercise-card-main">
             <strong>${escapeHtml(stat.name)}</strong>
             <span>${numberFmt.format(stat.sessions)}回 / ${numberFmt.format(stat.sets)}セット / 最新 ${stat.latest ? shortDateFmt.format(stat.latest.date) : "—"}</span>
+            ${detailMarkup}
           </span>
           <span class="exercise-card-score">
             <strong>${formatWork(stat.bestMainWorkKg)}</strong>
@@ -601,12 +678,13 @@ function renderBodySummary(workouts) {
     ...items.map((item) => (item.body === "有酸素" ? item.timeSec / 60 : item.volumeKg))
   );
   const mainSetStats = getRollingMainSetStats(workouts);
+  const undefinedDetails = getUndefinedMuscleDetailExercises(workouts);
 
   const rollingMarkup = `
     <div class="main-set-summary">
       <div class="main-set-summary-head">
         <strong>7日メインセット</strong>
-        <span>目安 10セット</span>
+        <span>細分類は週あたり目安</span>
       </div>
       <div class="main-set-summary-rows">
         ${mainSetStats.rows
@@ -617,23 +695,45 @@ function renderBodySummary(workouts) {
                   <strong style="color:${row.color}">${escapeHtml(row.body)}</strong>
                   <span>${numberFmt.format(row.latest)}セット</span>
                 </div>
-                <div class="main-set-bars" style="--target:${Math.min(100, (10 / mainSetStats.scaleMax) * 100)}%">
-                  ${row.points
-                    .map(
-                      (point) => `
-                        <span
-                          title="${escapeAttr(`${point.label} ${numberFmt.format(point.count)}セット`)}"
-                          style="height:${point.count ? Math.max(6, (point.count / mainSetStats.scaleMax) * 100) : 0}%; background:${row.color};"
-                        ></span>
-                      `
-                    )
-                    .join("")}
+                <div class="main-set-visuals">
+                  <div class="main-set-bars" style="--target:${Math.min(100, (10 / mainSetStats.scaleMax) * 100)}%">
+                    ${row.points
+                      .map(
+                        (point) => `
+                          <span
+                            title="${escapeAttr(`${point.label} ${numberFmt.format(point.count)}セット`)}"
+                            style="height:${point.count ? Math.max(6, (point.count / mainSetStats.scaleMax) * 100) : 0}%; background:${row.color};"
+                          ></span>
+                        `
+                      )
+                      .join("")}
+                  </div>
+                  <div class="main-set-details">
+                    ${row.details
+                      .map(
+                        (detail) => `
+                          <span class="main-set-detail" style="--detail-color:${detail.color};">
+                            <strong>${escapeHtml(detail.label)}</strong>
+                            <em>${numberFmt.format(detail.latest)}セット</em>
+                            <small>目安 ${escapeHtml(detail.target)}</small>
+                          </span>
+                        `
+                      )
+                      .join("")}
+                  </div>
                 </div>
               </div>
             `
           )
           .join("")}
       </div>
+      ${
+        undefinedDetails.length
+          ? `<div class="main-set-undefined"><strong>細分類未定義</strong><span>${undefinedDetails
+              .map((item) => `${escapeHtml(item.name)} (${numberFmt.format(item.sets)}セット)`)
+              .join("、")}</span></div>`
+          : ""
+      }
       <div class="main-set-axis">
         <span>${escapeHtml(mainSetStats.days[0]?.label || "")}</span>
         <span>${escapeHtml(mainSetStats.days[Math.floor(mainSetStats.days.length / 2)]?.label || "")}</span>
@@ -670,6 +770,7 @@ function renderBodySummary(workouts) {
 
 function getRollingMainSetStats(workouts, options = {}) {
   const bodies = options.bodies || MAIN_SET_SUMMARY_BODIES;
+  const detailGroups = options.detailGroups || MAIN_SET_DETAIL_GROUPS;
   const days = options.days || 21;
   const windowDays = options.windowDays || 7;
   const datedWorkouts = workouts
@@ -682,7 +783,18 @@ function getRollingMainSetStats(workouts, options = {}) {
       windowDays,
       scaleMax: 15,
       days: [],
-      rows: bodies.map((body) => ({ body, color: BODY_COLORS[body], latest: 0, points: [] }))
+      rows: bodies.map((body) => ({
+        body,
+        color: BODY_COLORS[body],
+        latest: 0,
+        points: [],
+        details: (detailGroups[body] || []).map((id) => ({
+          id,
+          ...MUSCLE_DETAILS[id],
+          latest: 0,
+          points: []
+        }))
+      }))
     };
   }
 
@@ -690,15 +802,29 @@ function getRollingMainSetStats(workouts, options = {}) {
   const firstDate = addDays(latestDate, -(Math.max(1, days) - 1));
   const bodySet = new Set(bodies);
   const dailyCounts = new Map();
+  const makeEmptyDay = () => ({
+    bodies: Object.fromEntries(bodies.map((bodyName) => [bodyName, 0])),
+    details: Object.fromEntries(
+      bodies.map((bodyName) => [
+        bodyName,
+        Object.fromEntries((detailGroups[bodyName] || []).map((detailId) => [detailId, 0]))
+      ])
+    )
+  });
 
   datedWorkouts.forEach((workout) => {
     const key = localDateKey(workout.date);
-    const item = dailyCounts.get(key) || Object.fromEntries(bodies.map((bodyName) => [bodyName, 0]));
+    const item = dailyCounts.get(key) || makeEmptyDay();
 
     workout.exercises
       .filter((exercise) => exercise.type === "strength" && bodySet.has(exercise.body))
       .forEach((exercise) => {
-        item[exercise.body] += exercise.metrics.mainSetCount || 0;
+        const mainSetCount = exercise.metrics.mainSetCount || 0;
+        const detail = classifyMuscleDetail(exercise.name);
+        item.bodies[exercise.body] += mainSetCount;
+        if (detail && item.details[exercise.body] && detail.id in item.details[exercise.body]) {
+          item.details[exercise.body][detail.id] += mainSetCount;
+        }
       });
 
     dailyCounts.set(key, item);
@@ -707,11 +833,20 @@ function getRollingMainSetStats(workouts, options = {}) {
   const points = [];
   for (let cursor = firstDate; cursor <= latestDate; cursor = addDays(cursor, 1)) {
     const counts = {};
+    const detailCounts = Object.fromEntries(
+      bodies.map((bodyName) => [
+        bodyName,
+        Object.fromEntries((detailGroups[bodyName] || []).map((detailId) => [detailId, 0]))
+      ])
+    );
     bodies.forEach((bodyName) => {
       let count = 0;
       for (let offset = 0; offset < windowDays; offset += 1) {
         const bucket = dailyCounts.get(localDateKey(addDays(cursor, -offset)));
-        count += bucket?.[bodyName] || 0;
+        count += bucket?.bodies?.[bodyName] || 0;
+        (detailGroups[bodyName] || []).forEach((detailId) => {
+          detailCounts[bodyName][detailId] += bucket?.details?.[bodyName]?.[detailId] || 0;
+        });
       }
       counts[bodyName] = count;
     });
@@ -719,7 +854,8 @@ function getRollingMainSetStats(workouts, options = {}) {
     points.push({
       date: new Date(cursor),
       label: shortDateFmt.format(cursor),
-      counts
+      counts,
+      detailCounts
     });
   }
 
@@ -739,9 +875,32 @@ function getRollingMainSetStats(workouts, options = {}) {
         date: point.date,
         label: point.label,
         count: point.counts[bodyName]
+      })),
+      details: (detailGroups[bodyName] || []).map((detailId) => ({
+        id: detailId,
+        ...MUSCLE_DETAILS[detailId],
+        latest: latestPoint?.detailCounts?.[bodyName]?.[detailId] || 0,
+        points: points.map((point) => ({
+          date: point.date,
+          label: point.label,
+          count: point.detailCounts[bodyName][detailId]
+        }))
       }))
     }))
   };
+}
+
+function getUndefinedMuscleDetailExercises(workouts) {
+  const map = new Map();
+  flattenExercises(workouts).forEach((record) => {
+    if (record.type !== "strength" || !DETAIL_TRACKED_BODIES.has(record.body)) return;
+    if (classifyMuscleDetail(record.name)) return;
+    const item = map.get(record.name) || { name: record.name, body: record.body, sets: 0, sessions: 0 };
+    item.sets += record.metrics.sets;
+    item.sessions += 1;
+    map.set(record.name, item);
+  });
+  return [...map.values()].sort((a, b) => b.sets - a.sets || a.name.localeCompare(b.name, "ja"));
 }
 
 function renderTrend(workouts) {
@@ -903,7 +1062,7 @@ function renderExerciseTable(workouts) {
   const rows = buildExerciseStats(workouts).filter((stat) => !query || stat.name.toLowerCase().includes(query));
 
   if (!rows.length) {
-    els.exerciseTable.innerHTML = `<tr><td colspan="9" class="empty-state">該当する種目がありません</td></tr>`;
+    els.exerciseTable.innerHTML = `<tr><td colspan="10" class="empty-state">該当する種目がありません</td></tr>`;
     return;
   }
 
@@ -914,6 +1073,7 @@ function renderExerciseTable(workouts) {
         <tr>
           <td><div class="exercise-name" title="${escapeAttr(stat.name)}">${escapeHtml(stat.name)}</div></td>
           <td><span class="tag" style="background:${tint(BODY_COLORS[stat.body])}; color:${BODY_COLORS[stat.body]}">${escapeHtml(stat.body)}</span></td>
+          <td>${getMuscleDetailMarkup(stat.name, stat.body) || "—"}</td>
           <td>${numberFmt.format(stat.sessions)}</td>
           <td>${numberFmt.format(stat.sets)}</td>
           <td>${stat.type === "strength" ? formatTon(stat.volumeKg) : formatDistance(stat.distanceM)}</td>

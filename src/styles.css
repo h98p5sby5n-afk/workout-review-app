@@ -346,8 +346,8 @@ canvas {
   display: grid;
   grid-template-columns: 66px minmax(0, 1fr);
   gap: 10px;
-  align-items: center;
-  min-height: 66px;
+  align-items: start;
+  min-height: 92px;
 }
 
 .main-set-body {
@@ -376,6 +376,12 @@ canvas {
   border-bottom: 1px solid var(--line);
 }
 
+.main-set-visuals {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
 .main-set-bars::before {
   position: absolute;
   right: 0;
@@ -395,6 +401,63 @@ canvas {
 .main-set-axis {
   padding-left: 76px;
   font-size: 11px;
+}
+
+.main-set-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.main-set-detail,
+.exercise-detail-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-height: 24px;
+  border: 1px solid #dfe6ea;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--detail-color, #52616c);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 3px 8px;
+}
+
+.main-set-detail strong,
+.main-set-detail em,
+.main-set-detail small {
+  min-width: 0;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.main-set-detail small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.main-set-undefined {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #ecd6a2;
+  border-radius: 7px;
+  background: #fffaf0;
+  color: #6f4e08;
+  padding: 9px 10px;
+}
+
+.main-set-undefined strong {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.main-set-undefined span {
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .body-card {
@@ -472,7 +535,7 @@ canvas {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 920px;
+  min-width: 1040px;
   background: #fff;
 }
 
@@ -924,6 +987,20 @@ tbody tr:hover {
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.exercise-card-main .exercise-detail-tag {
+  justify-self: start;
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--detail-color, #52616c);
+  text-overflow: ellipsis;
+}
+
+.exercise-detail-tag.undefined {
+  border-color: #ecd6a2;
+  background: #fffaf0;
+  color: #7a5b13;
 }
 
 .exercise-card-score {
