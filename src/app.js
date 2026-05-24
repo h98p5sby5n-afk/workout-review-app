@@ -1,5 +1,6 @@
 const BODY_ORDER = ["胸", "背中", "肩", "腕", "脚", "体幹", "有酸素", "その他"];
 const MAIN_SET_SUMMARY_BODIES = ["胸", "肩", "背中"];
+const ACTIVE_EXERCISE_DAYS = 90;
 const BODY_COLORS = {
   胸: "#ba4a4a",
   背中: "#3b6ea8",
@@ -117,6 +118,7 @@ function classifyBody(rawName) {
   if (/leg|squat|calf|lunge|ハック|レッグ/.test(name)) return "脚";
   if (/torso|plank|crunch|abdominal|rotation|腹|体幹/.test(name)) return "体幹";
   if (/lateral raise|shoulder|rear delt|rear-delt|rear raise|face pull|external rotation|shrug|リアレイズ|サイドレイズ|フェイスプル/.test(name)) return "肩";
+  if (/back extension|hyperextension|バックエクステンション|バックエクステ|ハイパーエクステンション/.test(name)) return "背中";
   if (/curl|bicep|tricep|pushdown|extension|hammer|カール|トライセップス/.test(name)) return "腕";
   if (/lat|pulldown|pull down|chin-up|row|pullover|high row|ラット|ロウ/.test(name)) return "背中";
   if (/chest|incline press|bench|pec|fly|dip|press|チェスト|インクライン/.test(name)) return "胸";
@@ -442,7 +444,7 @@ function refreshBodyOptions(workouts) {
 }
 
 function refreshExerciseOptions(workouts) {
-  const stats = buildExerciseStats(workouts).filter((stat) => stat.type === "strength");
+  const stats = getRankedExerciseStats(workouts);
   if (!stats.length) {
     state.exercise = "";
     els.exerciseSelect.innerHTML = `<option value="">該当なし</option>`;
@@ -475,7 +477,7 @@ function renderBodyTabs(workouts) {
 }
 
 function renderExerciseCards(workouts) {
-  const stats = buildExerciseStats(workouts).filter((stat) => stat.type === "strength");
+  const stats = getRankedExerciseStats(workouts);
   if (!stats.length) {
     els.exerciseCards.innerHTML = `<div class="empty-state">この期間の筋トレ種目がありません</div>`;
     return;
@@ -499,6 +501,24 @@ function renderExerciseCards(workouts) {
       `;
     })
     .join("");
+}
+
+function getRankedExerciseStats(workouts) {
+  return buildExerciseStats(workouts)
+    .filter((stat) => stat.type === "strength")
+    .filter((stat) => isActiveExercise(stat, state.workouts.length ? state.workouts : workouts))
+    .sort((a, b) => {
+      const setDiff = b.sets - a.sets;
+      return setDiff || b.sessions - a.sessions || b.volumeKg - a.volumeKg || a.name.localeCompare(b.name, "ja");
+    });
+}
+
+function isActiveExercise(stat, workouts) {
+  if (!stat.latest || !workouts.length) return false;
+  const latestWorkoutDate = new Date(Math.max(...workouts.map((workout) => workout.date.getTime())));
+  const cutoff = startOfDay(latestWorkoutDate);
+  cutoff.setDate(cutoff.getDate() - ACTIVE_EXERCISE_DAYS);
+  return stat.latest.date >= cutoff;
 }
 
 function renderSummary(workouts) {
