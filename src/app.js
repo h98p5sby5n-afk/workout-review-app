@@ -5,26 +5,36 @@ const MUSCLE_DETAILS = {
   chestDelt: {
     label: "胸+三角筋前部",
     target: "6-10",
+    targetMin: 6,
+    targetMax: 10,
     color: "#ba4a4a"
   },
   medialDelt: {
     label: "中部三角筋",
     target: "6-10",
+    targetMin: 6,
+    targetMax: 10,
     color: "#b7791f"
   },
   rearDeltTrap: {
     label: "後部三角筋・僧帽筋中下部",
     target: "4-8",
+    targetMin: 4,
+    targetMax: 8,
     color: "#8762a9"
   },
   lat: {
     label: "広背筋",
     target: "6-10",
+    targetMin: 6,
+    targetMax: 10,
     color: "#3b6ea8"
   },
   erector: {
     label: "脊柱起立筋",
     target: "2-6",
+    targetMin: 2,
+    targetMax: 6,
     color: "#2f7d64"
   }
 };
@@ -706,7 +716,10 @@ function renderBodySummary(workouts) {
                               <strong>${escapeHtml(detail.label)}</strong>
                               <span>${numberFmt.format(detail.latest)}セット</span>
                             </div>
-                            ${renderMainSetBars(detail.points, detail.color, mainSetStats.scaleMax, "main-set-bars detail")}
+                            ${renderMainSetBars(detail.points, detail.color, detail.scaleMax, "main-set-bars detail", {
+                              targetMin: detail.targetMin,
+                              targetMax: detail.targetMax
+                            })}
                           </div>
                         `
                       )
@@ -759,9 +772,13 @@ function renderBodySummary(workouts) {
   els.bodySummary.innerHTML = `${rollingMarkup}${bodyCardsMarkup}`;
 }
 
-function renderMainSetBars(points, color, scaleMax, className = "main-set-bars") {
+function renderMainSetBars(points, color, scaleMax, className = "main-set-bars", options = {}) {
+  const targetStyle =
+    Number.isFinite(options.targetMin) && Number.isFinite(options.targetMax)
+      ? ` --target-min:${Math.min(100, (options.targetMin / scaleMax) * 100)}%; --target-max:${Math.min(100, (options.targetMax / scaleMax) * 100)}%;`
+      : "";
   return `
-    <div class="${escapeAttr(className)}" style="--target:${Math.min(100, (10 / scaleMax) * 100)}%">
+    <div class="${escapeAttr(className)}" style="--target:${Math.min(100, (10 / scaleMax) * 100)}%;${targetStyle}">
       ${points
         .map(
           (point) => `
@@ -884,16 +901,22 @@ function getRollingMainSetStats(workouts, options = {}) {
         label: point.label,
         count: point.counts[bodyName]
       })),
-      details: (detailGroups[bodyName] || []).map((detailId) => ({
-        id: detailId,
-        ...MUSCLE_DETAILS[detailId],
-        latest: latestPoint?.detailCounts?.[bodyName]?.[detailId] || 0,
-        points: points.map((point) => ({
+      details: (detailGroups[bodyName] || []).map((detailId) => {
+        const detailPoints = points.map((point) => ({
           date: point.date,
           label: point.label,
           count: point.detailCounts[bodyName][detailId]
-        }))
-      }))
+        }));
+        const definition = MUSCLE_DETAILS[detailId];
+        const maxDetailCount = Math.max(1, ...detailPoints.map((point) => point.count));
+        return {
+          id: detailId,
+          ...definition,
+          latest: latestPoint?.detailCounts?.[bodyName]?.[detailId] || 0,
+          scaleMax: Math.max(definition.targetMax || 0, maxDetailCount),
+          points: detailPoints
+        };
+      })
     }))
   };
 }
