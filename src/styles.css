@@ -439,6 +439,8 @@ canvas {
 }
 
 .main-set-bars.detail {
+  justify-self: end;
+  width: 94%;
   height: 54px;
 }
 
