@@ -1,4 +1,5 @@
 const BODY_ORDER = ["胸", "背中", "肩", "腕", "脚", "体幹", "有酸素", "その他"];
+const MAIN_SET_SUMMARY_BODIES = ["胸", "肩", "背中"];
 const BODY_COLORS = {
   胸: "#ba4a4a",
   背中: "#3b6ea8",
@@ -252,6 +253,7 @@ function enrichWorkouts(workouts) {
         (set) => set.distanceM !== null || set.timeSec !== null || set.energyKcal !== null
       );
       exercise.type = strengthSets.length ? "strength" : cardioSets.length ? "cardio" : "other";
+      const mainSets = strengthSets.slice(-2);
 
       const metrics = {
         sets: exercise.sets.length,
@@ -263,6 +265,8 @@ function enrichWorkouts(workouts) {
         timeSec: sum(cardioSets, "timeSec"),
         energyKcal: sum(cardioSets, "energyKcal"),
         mainSet: null,
+        mainSets,
+        mainSetCount: mainSets.length,
         mainWorkKg: null,
         bestSet: null
       };
@@ -576,8 +580,49 @@ function renderBodySummary(workouts) {
     1,
     ...items.map((item) => (item.body === "有酸素" ? item.timeSec / 60 : item.volumeKg))
   );
+  const mainSetStats = getRollingMainSetStats(workouts);
 
-  els.bodySummary.innerHTML = items
+  const rollingMarkup = `
+    <div class="main-set-summary">
+      <div class="main-set-summary-head">
+        <strong>7日メインセット</strong>
+        <span>目安 10セット</span>
+      </div>
+      <div class="main-set-summary-rows">
+        ${mainSetStats.rows
+          .map(
+            (row) => `
+              <div class="main-set-row">
+                <div class="main-set-body">
+                  <strong style="color:${row.color}">${escapeHtml(row.body)}</strong>
+                  <span>${numberFmt.format(row.latest)}セット</span>
+                </div>
+                <div class="main-set-bars" style="--target:${Math.min(100, (10 / mainSetStats.scaleMax) * 100)}%">
+                  ${row.points
+                    .map(
+                      (point) => `
+                        <span
+                          title="${escapeAttr(`${point.label} ${numberFmt.format(point.count)}セット`)}"
+                          style="height:${point.count ? Math.max(6, (point.count / mainSetStats.scaleMax) * 100) : 0}%; background:${row.color};"
+                        ></span>
+                      `
+                    )
+                    .join("")}
+                </div>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+      <div class="main-set-axis">
+        <span>${escapeHtml(mainSetStats.days[0]?.label || "")}</span>
+        <span>${escapeHtml(mainSetStats.days[Math.floor(mainSetStats.days.length / 2)]?.label || "")}</span>
+        <span>${escapeHtml(mainSetStats.days[mainSetStats.days.length - 1]?.label || "")}</span>
+      </div>
+    </div>
+  `;
+
+  const bodyCardsMarkup = items
     .map((item) => {
       const metric = item.body === "有酸素" ? item.timeSec / 60 : item.volumeKg;
       const top = [...item.exercises.entries()].sort((a, b) => b[1] - a[1])[0];
@@ -599,6 +644,84 @@ function renderBodySummary(workouts) {
       `;
     })
     .join("");
+
+  els.bodySummary.innerHTML = `${rollingMarkup}${bodyCardsMarkup}`;
+}
+
+function getRollingMainSetStats(workouts, options = {}) {
+  const bodies = options.bodies || MAIN_SET_SUMMARY_BODIES;
+  const days = options.days || 21;
+  const windowDays = options.windowDays || 7;
+  const datedWorkouts = workouts
+    .filter((workout) => workout.date instanceof Date && Number.isFinite(workout.date.getTime()))
+    .sort((a, b) => a.date - b.date);
+
+  if (!datedWorkouts.length) {
+    return {
+      bodies,
+      windowDays,
+      scaleMax: 15,
+      days: [],
+      rows: bodies.map((body) => ({ body, color: BODY_COLORS[body], latest: 0, points: [] }))
+    };
+  }
+
+  const latestDate = startOfDay(new Date(Math.max(...datedWorkouts.map((workout) => workout.date.getTime()))));
+  const firstDate = addDays(latestDate, -(Math.max(1, days) - 1));
+  const bodySet = new Set(bodies);
+  const dailyCounts = new Map();
+
+  datedWorkouts.forEach((workout) => {
+    const key = localDateKey(workout.date);
+    const item = dailyCounts.get(key) || Object.fromEntries(bodies.map((bodyName) => [bodyName, 0]));
+
+    workout.exercises
+      .filter((exercise) => exercise.type === "strength" && bodySet.has(exercise.body))
+      .forEach((exercise) => {
+        item[exercise.body] += exercise.metrics.mainSetCount || 0;
+      });
+
+    dailyCounts.set(key, item);
+  });
+
+  const points = [];
+  for (let cursor = firstDate; cursor <= latestDate; cursor = addDays(cursor, 1)) {
+    const counts = {};
+    bodies.forEach((bodyName) => {
+      let count = 0;
+      for (let offset = 0; offset < windowDays; offset += 1) {
+        const bucket = dailyCounts.get(localDateKey(addDays(cursor, -offset)));
+        count += bucket?.[bodyName] || 0;
+      }
+      counts[bodyName] = count;
+    });
+
+    points.push({
+      date: new Date(cursor),
+      label: shortDateFmt.format(cursor),
+      counts
+    });
+  }
+
+  const maxCount = Math.max(1, ...points.flatMap((point) => bodies.map((bodyName) => point.counts[bodyName])));
+  const latestPoint = points[points.length - 1];
+
+  return {
+    bodies,
+    windowDays,
+    scaleMax: Math.max(15, maxCount),
+    days: points,
+    rows: bodies.map((bodyName) => ({
+      body: bodyName,
+      color: BODY_COLORS[bodyName],
+      latest: latestPoint?.counts[bodyName] || 0,
+      points: points.map((point) => ({
+        date: point.date,
+        label: point.label,
+        count: point.counts[bodyName]
+      }))
+    }))
+  };
 }
 
 function renderTrend(workouts) {
@@ -1453,6 +1576,26 @@ function startOfWeek(date) {
   const day = (copy.getDay() + 6) % 7;
   copy.setDate(copy.getDate() - day);
   return copy;
+}
+
+function startOfDay(date) {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function addDays(date, days) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+
+function localDateKey(date) {
+  const copy = startOfDay(date);
+  const year = copy.getFullYear();
+  const month = String(copy.getMonth() + 1).padStart(2, "0");
+  const day = String(copy.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatTon(value) {
