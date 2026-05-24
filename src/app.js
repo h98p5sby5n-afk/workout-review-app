@@ -717,7 +717,7 @@ function renderBodySummary(workouts) {
                               <strong>${escapeHtml(detail.label)}</strong>
                               <span>${numberFmt.format(detail.latest)}セット / ${escapeHtml(detail.target)}セット</span>
                             </div>
-                            ${renderMainSetBars(detail.points, detail.color, detail.scaleMax, "main-set-bars detail", {
+                            ${renderMainSetLine(detail.points, detail.color, detail.scaleMax, {
                               targetMin: detail.targetMin,
                               targetMax: detail.targetMax
                             })}
@@ -792,6 +792,57 @@ function renderMainSetBars(points, color, scaleMax, className = "main-set-bars",
         .join("")}
     </div>
   `;
+}
+
+function renderMainSetLine(points, color, scaleMax, options = {}) {
+  const width = 240;
+  const height = 54;
+  const padX = 2;
+  const padTop = 5;
+  const padBottom = 8;
+  const plotHeight = height - padTop - padBottom;
+  const xStep = points.length > 1 ? (width - padX * 2) / (points.length - 1) : 0;
+  const toY = (count) => padTop + plotHeight - (Math.min(scaleMax, count) / scaleMax) * plotHeight;
+  const pointData = points.map((point, index) => ({
+    ...point,
+    x: padX + xStep * index,
+    y: toY(point.count || 0)
+  }));
+  const path = pointData
+    .map((point, index) => `${index ? "L" : "M"} ${roundChart(point.x)} ${roundChart(point.y)}`)
+    .join(" ");
+  const areaPath = `${path} L ${roundChart(padX + xStep * Math.max(0, points.length - 1))} ${height - padBottom} L ${padX} ${height - padBottom} Z`;
+  const targetMinY = Number.isFinite(options.targetMin) ? toY(options.targetMin) : null;
+  const targetMaxY = Number.isFinite(options.targetMax) ? toY(options.targetMax) : null;
+  const targetBand =
+    targetMinY !== null && targetMaxY !== null
+      ? `<rect x="${padX}" y="${roundChart(targetMaxY)}" width="${width - padX * 2}" height="${Math.max(1, roundChart(targetMinY - targetMaxY))}" fill="${escapeAttr(color)}" opacity="0.08"></rect>
+         <line x1="${padX}" y1="${roundChart(targetMinY)}" x2="${width - padX}" y2="${roundChart(targetMinY)}" class="target-line strong"></line>
+         <line x1="${padX}" y1="${roundChart(targetMaxY)}" x2="${width - padX}" y2="${roundChart(targetMaxY)}" class="target-line"></line>`
+      : "";
+
+  return `
+    <div class="main-set-line" style="--detail-color:${color};">
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttr(points.map((point) => `${point.label} ${numberFmt.format(point.count)}セット`).join("、"))}">
+        ${targetBand}
+        <path class="line-area" d="${escapeAttr(areaPath)}"></path>
+        <path class="line-stroke" d="${escapeAttr(path)}"></path>
+        ${pointData
+          .map(
+            (point) => `
+              <circle cx="${roundChart(point.x)}" cy="${roundChart(point.y)}" r="${point.count ? 2.2 : 1.4}">
+                <title>${escapeHtml(`${point.label} ${numberFmt.format(point.count)}セット`)}</title>
+              </circle>
+            `
+          )
+          .join("")}
+      </svg>
+    </div>
+  `;
+}
+
+function roundChart(value) {
+  return Math.round(value * 10) / 10;
 }
 
 function getRollingMainSetStats(workouts, options = {}) {

@@ -438,24 +438,46 @@ canvas {
   white-space: nowrap;
 }
 
-.main-set-bars.detail {
+.main-set-line {
   justify-self: end;
   width: 94%;
   height: 54px;
 }
 
-.main-set-bars.detail::before {
-  bottom: var(--target-min);
-  border-top-color: rgba(71, 83, 94, 0.5);
+.main-set-line svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.main-set-bars.detail::after {
-  position: absolute;
-  right: 0;
-  bottom: var(--target-max);
-  left: 0;
-  border-top: 1px dashed rgba(71, 83, 94, 0.28);
-  content: "";
+.main-set-line .line-area {
+  fill: var(--detail-color);
+  opacity: 0.1;
+}
+
+.main-set-line .line-stroke {
+  fill: none;
+  stroke: var(--detail-color);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.main-set-line circle {
+  fill: #fff;
+  stroke: var(--detail-color);
+  stroke-width: 1.8;
+}
+
+.main-set-line .target-line {
+  stroke: rgba(71, 83, 94, 0.3);
+  stroke-dasharray: 4 4;
+  stroke-width: 1.2;
+}
+
+.main-set-line .target-line.strong {
+  stroke: rgba(71, 83, 94, 0.54);
 }
 
 .exercise-detail-tag {
