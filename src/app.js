@@ -29,7 +29,7 @@ const MUSCLE_DETAILS = {
   }
 };
 const MAIN_SET_DETAIL_GROUPS = {
-  胸: ["chestDelt"],
+  胸: [],
   肩: ["medialDelt", "rearDeltTrap"],
   背中: ["lat", "rearDeltTrap", "erector"]
 };
@@ -684,7 +684,7 @@ function renderBodySummary(workouts) {
     <div class="main-set-summary">
       <div class="main-set-summary-head">
         <strong>7日メインセット</strong>
-        <span>細分類は週あたり目安</span>
+        <span>直近21日の7日推移</span>
       </div>
       <div class="main-set-summary-rows">
         ${mainSetStats.rows
@@ -696,27 +696,18 @@ function renderBodySummary(workouts) {
                   <span>${numberFmt.format(row.latest)}セット</span>
                 </div>
                 <div class="main-set-visuals">
-                  <div class="main-set-bars" style="--target:${Math.min(100, (10 / mainSetStats.scaleMax) * 100)}%">
-                    ${row.points
-                      .map(
-                        (point) => `
-                          <span
-                            title="${escapeAttr(`${point.label} ${numberFmt.format(point.count)}セット`)}"
-                            style="height:${point.count ? Math.max(6, (point.count / mainSetStats.scaleMax) * 100) : 0}%; background:${row.color};"
-                          ></span>
-                        `
-                      )
-                      .join("")}
-                  </div>
-                  <div class="main-set-details">
+                  ${renderMainSetBars(row.points, row.color, mainSetStats.scaleMax)}
+                  <div class="main-set-detail-rows">
                     ${row.details
                       .map(
                         (detail) => `
-                          <span class="main-set-detail" style="--detail-color:${detail.color};">
-                            <strong>${escapeHtml(detail.label)}</strong>
-                            <em>${numberFmt.format(detail.latest)}セット</em>
-                            <small>目安 ${escapeHtml(detail.target)}</small>
-                          </span>
+                          <div class="main-set-detail-row">
+                            <div class="main-set-detail-label" style="--detail-color:${detail.color};">
+                              <strong>${escapeHtml(detail.label)}</strong>
+                              <span>${numberFmt.format(detail.latest)}セット</span>
+                            </div>
+                            ${renderMainSetBars(detail.points, detail.color, mainSetStats.scaleMax, "main-set-bars detail")}
+                          </div>
                         `
                       )
                       .join("")}
@@ -766,6 +757,23 @@ function renderBodySummary(workouts) {
     .join("");
 
   els.bodySummary.innerHTML = `${rollingMarkup}${bodyCardsMarkup}`;
+}
+
+function renderMainSetBars(points, color, scaleMax, className = "main-set-bars") {
+  return `
+    <div class="${escapeAttr(className)}" style="--target:${Math.min(100, (10 / scaleMax) * 100)}%">
+      ${points
+        .map(
+          (point) => `
+            <span
+              title="${escapeAttr(`${point.label} ${numberFmt.format(point.count)}セット`)}"
+              style="height:${point.count ? Math.max(6, (point.count / scaleMax) * 100) : 0}%; background:${color};"
+            ></span>
+          `
+        )
+        .join("")}
+    </div>
+  `;
 }
 
 function getRollingMainSetStats(workouts, options = {}) {
