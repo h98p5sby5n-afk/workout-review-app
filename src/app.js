@@ -43,6 +43,7 @@ const MAIN_SET_DETAIL_GROUPS = {
   肩: ["medialDelt", "rearDeltTrap"],
   背中: ["lat", "rearDeltTrap", "erector"]
 };
+const SHARED_DETAIL_IDS = new Set(["rearDeltTrap"]);
 const MUSCLE_DETAIL_RULES = [
   {
     id: "erector",
@@ -714,7 +715,7 @@ function renderBodySummary(workouts) {
                           <div class="main-set-detail-row">
                             <div class="main-set-detail-label" style="--detail-color:${detail.color};">
                               <strong>${escapeHtml(detail.label)}</strong>
-                              <span>${numberFmt.format(detail.latest)}セット</span>
+                              <span>${numberFmt.format(detail.latest)}セット / ${escapeHtml(detail.target)}セット</span>
                             </div>
                             ${renderMainSetBars(detail.points, detail.color, detail.scaleMax, "main-set-bars detail", {
                               targetMin: detail.targetMin,
@@ -813,12 +814,16 @@ function getRollingMainSetStats(workouts, options = {}) {
         color: BODY_COLORS[body],
         latest: 0,
         points: [],
-        details: (detailGroups[body] || []).map((id) => ({
-          id,
-          ...MUSCLE_DETAILS[id],
-          latest: 0,
-          points: []
-        }))
+        details: (detailGroups[body] || []).map((id) => {
+          const definition = MUSCLE_DETAILS[id];
+          return {
+            id,
+            ...definition,
+            latest: 0,
+            scaleMax: definition.targetMax || 10,
+            points: []
+          };
+        })
       }))
     };
   }
@@ -826,6 +831,8 @@ function getRollingMainSetStats(workouts, options = {}) {
   const latestDate = startOfDay(new Date(Math.max(...datedWorkouts.map((workout) => workout.date.getTime()))));
   const firstDate = addDays(latestDate, -(Math.max(1, days) - 1));
   const bodySet = new Set(bodies);
+  const detailIds = [...new Set(Object.values(detailGroups).flat())];
+  const sharedDetailIds = detailIds.filter((detailId) => SHARED_DETAIL_IDS.has(detailId));
   const dailyCounts = new Map();
   const makeEmptyDay = () => ({
     bodies: Object.fromEntries(bodies.map((bodyName) => [bodyName, 0])),
@@ -834,7 +841,8 @@ function getRollingMainSetStats(workouts, options = {}) {
         bodyName,
         Object.fromEntries((detailGroups[bodyName] || []).map((detailId) => [detailId, 0]))
       ])
-    )
+    ),
+    sharedDetails: Object.fromEntries(sharedDetailIds.map((detailId) => [detailId, 0]))
   });
 
   datedWorkouts.forEach((workout) => {
@@ -847,7 +855,10 @@ function getRollingMainSetStats(workouts, options = {}) {
         const mainSetCount = exercise.metrics.mainSetCount || 0;
         const detail = classifyMuscleDetail(exercise.name);
         item.bodies[exercise.body] += mainSetCount;
-        if (detail && item.details[exercise.body] && detail.id in item.details[exercise.body]) {
+        if (!detail) return;
+        if (SHARED_DETAIL_IDS.has(detail.id) && detail.id in item.sharedDetails) {
+          item.sharedDetails[detail.id] += mainSetCount;
+        } else if (item.details[exercise.body] && detail.id in item.details[exercise.body]) {
           item.details[exercise.body][detail.id] += mainSetCount;
         }
       });
@@ -870,7 +881,9 @@ function getRollingMainSetStats(workouts, options = {}) {
         const bucket = dailyCounts.get(localDateKey(addDays(cursor, -offset)));
         count += bucket?.bodies?.[bodyName] || 0;
         (detailGroups[bodyName] || []).forEach((detailId) => {
-          detailCounts[bodyName][detailId] += bucket?.details?.[bodyName]?.[detailId] || 0;
+          detailCounts[bodyName][detailId] += SHARED_DETAIL_IDS.has(detailId)
+            ? bucket?.sharedDetails?.[detailId] || 0
+            : bucket?.details?.[bodyName]?.[detailId] || 0;
         });
       }
       counts[bodyName] = count;
