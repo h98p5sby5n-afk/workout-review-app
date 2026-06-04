@@ -105,6 +105,24 @@ const INBODY_METRICS = {
     unit: "%",
     color: "#ba4a4a",
     aliases: [/体脂肪率/, /percentbodyfat/, /bodyfatpercent/, /\bpbf\b/, /fatpercent/, /bodyfat.*%/]
+  },
+  bmi: {
+    label: "BMI",
+    unit: "",
+    color: "#7357a4",
+    aliases: [/^bmi/, /bodymassindex/, /体格指数/]
+  },
+  muscleMass: {
+    label: "筋肉量",
+    unit: "kg",
+    color: "#2f7d64",
+    aliases: [/筋肉量/, /^musclemass/, /softleanmass/, /leanbodymass/]
+  },
+  bodyFatMass: {
+    label: "体脂肪量",
+    unit: "kg",
+    color: "#b7791f",
+    aliases: [/体脂肪量/, /bodyfatmass/, /^fatmass/]
   }
 };
 const INBODY_METRIC_KEYS = Object.keys(INBODY_METRICS);
@@ -467,6 +485,12 @@ function findInBodyColumn(normalizedHeaders, aliases, metricKey = "") {
   return normalizedHeaders.findIndex((header) => {
     if (!header) return false;
     if (metricKey === "bodyFatPercent" && /mass|量|kg/.test(header) && !/%|率|percent|pbf/.test(header)) {
+      return false;
+    }
+    if (metricKey === "bodyFatMass" && /%|率|percent|pbf/.test(header)) {
+      return false;
+    }
+    if (metricKey === "muscleMass" && /骨格|skeletal|smm/.test(header)) {
       return false;
     }
     if (metricKey === "weight" && /target|目標|control|調節/.test(header)) return false;
@@ -919,9 +943,10 @@ function renderInBodyMetricTabs(records) {
     const active = key === state.inbodyMetric ? " active" : "";
     const latestValue = latest?.[key];
     const delta = first && latest && Number.isFinite(latestValue) && Number.isFinite(first[key]) ? latestValue - first[key] : null;
+    const label = metric.unit ? `${metric.label} (${metric.unit})` : metric.label;
     return `
       <button class="metric-tab${active}" type="button" data-inbody-metric="${escapeAttr(key)}" role="tab" aria-selected="${key === state.inbodyMetric}">
-        <span>${escapeHtml(metric.label)} (${escapeHtml(metric.unit)})</span>
+        <span>${escapeHtml(label)}</span>
         <strong>${escapeHtml(formatInBodyNumber(latestValue))}</strong>
         <em>${formatInBodyDelta(delta, key)}</em>
       </button>

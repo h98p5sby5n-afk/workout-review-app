@@ -230,10 +230,6 @@ h3 {
   min-width: 100%;
 }
 
-.dashboard-page + .dashboard-page {
-  padding-left: 16px;
-}
-
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(150px, 230px));
