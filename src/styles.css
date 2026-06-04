@@ -368,6 +368,50 @@ select,
   height: 420px;
 }
 
+.inbody-correlation-grid {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.inbody-correlation-panel {
+  position: relative;
+}
+
+.correlation-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: -2px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.correlation-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.correlation-legend i {
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.correlation-legend i.bar {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.inbody-correlation-frame {
+  height: 520px;
+}
+
 .muscle-split-panel {
   margin-bottom: 14px;
 }
@@ -960,8 +1004,13 @@ tbody tr:hover {
   .chart-frame.score,
   .chart-frame.bubble,
   .chart-frame.reps,
-  .inbody-chart-frame {
+  .inbody-chart-frame,
+  .inbody-correlation-frame {
     height: 240px;
+  }
+
+  .inbody-correlation-frame {
+    height: 360px;
   }
 }
 

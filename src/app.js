@@ -126,6 +126,41 @@ const INBODY_METRICS = {
   }
 };
 const INBODY_METRIC_KEYS = Object.keys(INBODY_METRICS);
+const INBODY_SEGMENT_METRICS = {
+  rightArmMuscle: {
+    label: "右腕筋肉量",
+    unit: "kg",
+    color: "#3b6ea8",
+    aliases: [/右腕筋肉量/, /rightarmmuscle/, /rightupperlimbmuscle/]
+  },
+  leftArmMuscle: {
+    label: "左腕筋肉量",
+    unit: "kg",
+    color: "#7357a4",
+    aliases: [/左腕筋肉量/, /leftarmmuscle/, /leftupperlimbmuscle/]
+  },
+  trunkMuscle: {
+    label: "体幹筋肉量",
+    unit: "kg",
+    color: "#1f7a83",
+    aliases: [/体幹筋肉量/, /trunkmuscle/]
+  }
+};
+const INBODY_SEGMENT_KEYS = Object.keys(INBODY_SEGMENT_METRICS);
+const INBODY_CORRELATION_CHARTS = [
+  {
+    canvasKey: "armCorrelationCanvas",
+    legendKey: "armCorrelationLegend",
+    muscleKeys: ["rightArmMuscle", "leftArmMuscle"],
+    trainingBodies: ["胸", "肩"]
+  },
+  {
+    canvasKey: "trunkCorrelationCanvas",
+    legendKey: "trunkCorrelationLegend",
+    muscleKeys: ["trunkMuscle"],
+    trainingBodies: ["胸", "背中"]
+  }
+];
 const INBODY_EMPTY_FILE_NAME = "未読み込み";
 
 const DEFAULT_CSV_PATH = "./data/sample.csv";
@@ -191,6 +226,10 @@ const els = {
   inbodyCanvas: document.querySelector("#inbodyCanvas"),
   inbodyStat: document.querySelector("#inbodyStat"),
   inbodyTooltip: document.querySelector("#inbodyTooltip"),
+  armCorrelationCanvas: document.querySelector("#armCorrelationCanvas"),
+  trunkCorrelationCanvas: document.querySelector("#trunkCorrelationCanvas"),
+  armCorrelationLegend: document.querySelector("#armCorrelationLegend"),
+  trunkCorrelationLegend: document.querySelector("#trunkCorrelationLegend"),
   backToBodyButton: document.querySelector("#backToBodyButton"),
   bodyExplorer: document.querySelector(".body-explorer")
 };
@@ -455,6 +494,10 @@ function parseInBodyCsv(text) {
         const index = headerMatch.columns[key];
         metrics[key] = isColumnIndex(index) ? toMeasurementNumber(row[index]) : null;
       });
+      INBODY_SEGMENT_KEYS.forEach((key) => {
+        const index = headerMatch.columns[key];
+        metrics[key] = isColumnIndex(index) ? toMeasurementNumber(row[index]) : null;
+      });
       if (!INBODY_METRIC_KEYS.some((key) => Number.isFinite(metrics[key]))) return null;
       return {
         date,
@@ -477,6 +520,9 @@ function detectInBodyColumns(headers) {
   };
   INBODY_METRIC_KEYS.forEach((key) => {
     columns[key] = findInBodyColumn(normalized, INBODY_METRICS[key].aliases, key);
+  });
+  INBODY_SEGMENT_KEYS.forEach((key) => {
+    columns[key] = findInBodyColumn(normalized, INBODY_SEGMENT_METRICS[key].aliases, key);
   });
   return columns;
 }
@@ -895,6 +941,7 @@ function renderInBody() {
   renderInBodySummary(records);
   renderInBodyMetricTabs(records);
   drawInBodyChart(records);
+  renderInBodyCorrelation(records);
 }
 
 function renderInBodySummary(records) {
@@ -1030,6 +1077,282 @@ function drawInBodyChart(records) {
 
   state.inbodyPoints = points;
   els.inbodyStat.innerHTML = buildInBodyStat(series, metricKey);
+}
+
+function renderInBodyCorrelation(records) {
+  INBODY_CORRELATION_CHARTS.forEach((config) => {
+    const canvas = els[config.canvasKey];
+    const legend = els[config.legendKey];
+    if (!canvas || !legend) return;
+    legend.innerHTML = buildCorrelationLegend(config);
+    drawInBodyCorrelationChart(canvas, records, config);
+  });
+}
+
+function buildCorrelationLegend(config) {
+  const muscleItems = config.muscleKeys.map((key) => {
+    const metric = INBODY_SEGMENT_METRICS[key];
+    return `<span><i style="background:${metric.color}"></i>${escapeHtml(metric.label)}</span>`;
+  });
+  const setItems = config.trainingBodies.map(
+    (body) => `<span><i class="bar" style="background:${BODY_COLORS[body]}"></i>${escapeHtml(body)}メインセット</span>`
+  );
+  return [...muscleItems, ...setItems].join("");
+}
+
+function drawInBodyCorrelationChart(canvas, records, config) {
+  const { ctx, width, height } = setupCanvas(canvas);
+  const pad = { left: 58, right: 30, top: 28, bottom: 44 };
+  ctx.clearRect(0, 0, width, height);
+  drawPanelBackground(ctx, width, height);
+
+  const lineSeries = config.muscleKeys
+    .map((key) => ({
+      key,
+      metric: INBODY_SEGMENT_METRICS[key],
+      points: records
+        .filter((record) => Number.isFinite(record[key]))
+        .map((record) => ({ date: record.date, value: record[key] }))
+        .sort((a, b) => a.date - b.date)
+    }))
+    .filter((line) => line.points.length);
+
+  if (!lineSeries.length) {
+    drawEmptyChart(ctx, width, height, state.inbodyRecords.length ? "部位別筋肉量の列がありません" : "InBody CSVを読み込んでください");
+    return;
+  }
+
+  const recordDates = lineSeries.flatMap((line) => line.points.map((point) => point.date));
+  const rawDomain = getRawTimeDomain(recordDates);
+  const timeDomain = getTimeDomain(recordDates);
+  const monthlySets = getMonthlyBodySetBuckets(state.workouts, config.trainingBodies, rawDomain);
+  const plotW = width - pad.left - pad.right;
+  const muscleTop = pad.top;
+  const muscleBottom = Math.round(height * 0.58);
+  const setTop = muscleBottom + 38;
+  const setBottom = height - pad.bottom;
+  const muscleH = muscleBottom - muscleTop;
+  const setH = setBottom - setTop;
+  const xFor = (date) => pad.left + normalizedTimePosition(date, timeDomain) * plotW;
+
+  drawCorrelationTimeGrid(ctx, width, height, pad, timeDomain, muscleTop, setBottom);
+  drawCorrelationMuscleAxis(ctx, width, pad, muscleTop, muscleBottom, lineSeries);
+  drawCorrelationSetAxis(ctx, width, pad, setTop, setBottom, monthlySets, config.trainingBodies);
+
+  const muscleValues = lineSeries.flatMap((line) => line.points.map((point) => point.value));
+  const muscleMin = Math.min(...muscleValues);
+  const muscleMax = Math.max(...muscleValues);
+  const muscleSpread = muscleMax - muscleMin || Math.max(0.2, muscleMax * 0.03);
+  const yMin = Math.max(0, muscleMin - muscleSpread * 0.24);
+  const yMax = muscleMax + muscleSpread * 0.24;
+  const yForMuscle = (value) => muscleTop + muscleH - ((value - yMin) / (yMax - yMin || 1)) * muscleH;
+  const maxSets = Math.max(1, ...monthlySets.flatMap((bucket) => config.trainingBodies.map((body) => bucket.counts[body] || 0)));
+  const yForSets = (value) => setBottom - (value / maxSets) * setH;
+
+  ctx.save();
+  ctx.strokeStyle = "#cad4db";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, muscleBottom + 18);
+  ctx.lineTo(width - pad.right, muscleBottom + 18);
+  ctx.stroke();
+  ctx.restore();
+
+  monthlySets.forEach((bucket) => {
+    const monthStartX = xFor(bucket.start);
+    const monthEndX = xFor(bucket.end);
+    const slotWidth = Math.max(8, Math.min(64, Math.abs(monthEndX - monthStartX) * 0.72));
+    const barWidth = Math.max(3, slotWidth / config.trainingBodies.length - 3);
+    const centerX = xFor(bucket.mid);
+    const startX = centerX - ((barWidth + 3) * config.trainingBodies.length - 3) / 2;
+    config.trainingBodies.forEach((body, index) => {
+      const value = bucket.counts[body] || 0;
+      const barHeight = setBottom - yForSets(value);
+      const x = startX + index * (barWidth + 3);
+      ctx.fillStyle = BODY_COLORS[body] || "#64717c";
+      ctx.globalAlpha = value ? 0.82 : 0.18;
+      ctx.fillRect(x, setBottom - barHeight, barWidth, barHeight);
+      ctx.globalAlpha = 1;
+    });
+  });
+
+  lineSeries.forEach((line) => {
+    const points = line.points.map((point) => ({
+      x: xFor(point.date),
+      y: yForMuscle(point.value),
+      value: point.value
+    }));
+    ctx.strokeStyle = "rgba(107, 117, 128, 0.22)";
+    ctx.lineWidth = 5.4;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    points.forEach((point, index) => (index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)));
+    ctx.stroke();
+
+    ctx.strokeStyle = line.metric.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    points.forEach((point, index) => (index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)));
+    ctx.stroke();
+
+    points.forEach((point) => {
+      ctx.beginPath();
+      ctx.fillStyle = "#fff";
+      ctx.arc(point.x, point.y, 4.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2.1;
+      ctx.strokeStyle = line.metric.color;
+      ctx.stroke();
+    });
+  });
+
+  drawCorrelationLabels(ctx, width, height, pad, rawDomain, muscleTop, setTop);
+}
+
+function getRawTimeDomain(dates) {
+  const times = dates.map((date) => date?.getTime?.()).filter((time) => Number.isFinite(time));
+  if (!times.length) return { min: 0, max: 1 };
+  const min = Math.min(...times);
+  const max = Math.max(...times);
+  return min === max ? { min: min - 86400000, max: max + 86400000 } : { min, max };
+}
+
+function getMonthlyBodySetBuckets(workouts, bodies, domain) {
+  const start = new Date(domain.min);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(1);
+  const end = new Date(domain.max);
+  end.setHours(0, 0, 0, 0);
+  end.setDate(1);
+  const buckets = [];
+  for (let cursor = new Date(start); cursor <= end; cursor.setMonth(cursor.getMonth() + 1)) {
+    const bucketStart = new Date(cursor);
+    const bucketEnd = new Date(cursor);
+    bucketEnd.setMonth(bucketEnd.getMonth() + 1);
+    const bucketMid = new Date(bucketStart);
+    bucketMid.setDate(15);
+    buckets.push({
+      key: `${bucketStart.getFullYear()}-${bucketStart.getMonth()}`,
+      start: bucketStart,
+      end: bucketEnd,
+      mid: bucketMid,
+      counts: Object.fromEntries(bodies.map((body) => [body, 0]))
+    });
+  }
+
+  const bucketMap = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+  workouts
+    .filter((workout) => workout.date instanceof Date && workout.date.getTime() >= domain.min && workout.date.getTime() <= domain.max)
+    .forEach((workout) => {
+      const key = `${workout.date.getFullYear()}-${workout.date.getMonth()}`;
+      const bucket = bucketMap.get(key);
+      if (!bucket) return;
+      workout.exercises
+        .filter((exercise) => exercise.type === "strength" && bodies.includes(exercise.body))
+        .forEach((exercise) => {
+          bucket.counts[exercise.body] += exercise.metrics.mainSetCount || 0;
+        });
+    });
+
+  return buckets;
+}
+
+function drawCorrelationTimeGrid(ctx, width, height, pad, timeDomain, top, bottom) {
+  const plotW = width - pad.left - pad.right;
+  const start = new Date(timeDomain.min);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(1);
+  if (start.getTime() < timeDomain.min) start.setMonth(start.getMonth() + 1);
+
+  const ticks = [];
+  for (let cursor = new Date(start); cursor.getTime() <= timeDomain.max; cursor.setMonth(cursor.getMonth() + 1)) {
+    ticks.push(new Date(cursor));
+  }
+  const xFor = (date) => pad.left + normalizedTimePosition(date, timeDomain) * plotW;
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(112, 124, 135, 0.16)";
+  ctx.fillStyle = "#64717c";
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ticks.forEach((tick, index) => {
+    const x = xFor(tick);
+    if (x < pad.left || x > width - pad.right) return;
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
+    ctx.stroke();
+    if (index % Math.max(1, Math.ceil(ticks.length / 6)) === 0 || index === ticks.length - 1) {
+      ctx.fillText(`${tick.getMonth() + 1}月`, x, height - pad.bottom + 16);
+    }
+  });
+  ctx.restore();
+}
+
+function drawCorrelationMuscleAxis(ctx, width, pad, top, bottom, lineSeries) {
+  const values = lineSeries.flatMap((line) => line.points.map((point) => point.value));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const spread = max - min || Math.max(0.2, max * 0.03);
+  const yMin = Math.max(0, min - spread * 0.24);
+  const yMax = max + spread * 0.24;
+  const plotH = bottom - top;
+
+  ctx.save();
+  ctx.strokeStyle = "#dce4e9";
+  ctx.fillStyle = "#64717c";
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let i = 0; i <= 3; i += 1) {
+    const y = top + (plotH * i) / 3;
+    const value = yMax - ((yMax - yMin) * i) / 3;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+    ctx.fillText(formatKg(value), pad.left - 8, y);
+  }
+  ctx.restore();
+}
+
+function drawCorrelationSetAxis(ctx, width, pad, top, bottom, monthlySets, bodies) {
+  const maxSets = Math.max(1, ...monthlySets.flatMap((bucket) => bodies.map((body) => bucket.counts[body] || 0)));
+  const plotH = bottom - top;
+
+  ctx.save();
+  ctx.strokeStyle = "#dce4e9";
+  ctx.fillStyle = "#64717c";
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let i = 0; i <= 2; i += 1) {
+    const y = top + (plotH * i) / 2;
+    const value = Math.round(maxSets - (maxSets * i) / 2);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+    ctx.fillText(`${numberFmt.format(value)}set`, pad.left - 8, y);
+  }
+  ctx.restore();
+}
+
+function drawCorrelationLabels(ctx, width, height, pad, timeDomain, muscleTop, setTop) {
+  ctx.save();
+  ctx.fillStyle = "#64717c";
+  ctx.font = "700 12px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText("部位別筋肉量", pad.left, muscleTop - 20);
+  ctx.fillText("月別メインセット", pad.left, setTop - 20);
+  const start = new Date(timeDomain.min);
+  const end = new Date(timeDomain.max);
+  ctx.textAlign = "right";
+  ctx.fillText(`${start.getFullYear()}/${start.getMonth() + 1} - ${end.getFullYear()}/${end.getMonth() + 1}`, width - pad.right, height - 24);
+  ctx.restore();
 }
 
 function drawInBodyGrid(ctx, width, height, pad, yMin, yMax, metricKey) {
@@ -2502,9 +2825,10 @@ function scoreInBodyCsvText(text) {
   const headerScore = rows.reduce((best, row) => {
     const columns = detectInBodyColumns(row);
     const metricCount = INBODY_METRIC_KEYS.filter((key) => isColumnIndex(columns[key])).length;
-    return Math.max(best, (isColumnIndex(columns.date) ? 2 : 0) + metricCount);
+    const segmentCount = INBODY_SEGMENT_KEYS.filter((key) => isColumnIndex(columns[key])).length;
+    return Math.max(best, (isColumnIndex(columns.date) ? 2 : 0) + metricCount + segmentCount);
   }, 0);
-  const keywordScore = [/体重/, /骨格筋/, /体脂肪率/, /Weight/i, /Skeletal/i, /Percent Body Fat/i, /\bPBF\b/i].reduce(
+  const keywordScore = [/体重/, /骨格筋/, /体脂肪率/, /右腕筋肉量/, /体幹筋肉量/, /Weight/i, /Skeletal/i, /Percent Body Fat/i, /\bPBF\b/i].reduce(
     (total, pattern) => total + (pattern.test(text) ? 5 : 0),
     0
   );

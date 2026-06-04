@@ -222,6 +222,34 @@
               </div>
               <div id="inbodyTooltip" class="chart-tooltip" hidden></div>
             </section>
+
+            <section class="inbody-correlation-grid" aria-label="筋肉量とセット数の相関">
+              <article class="panel inbody-correlation-panel">
+                <div class="panel-head">
+                  <div>
+                    <p class="eyebrow">Arm Balance</p>
+                    <h2>腕筋肉量と胸・肩セット数</h2>
+                  </div>
+                </div>
+                <div class="correlation-legend" id="armCorrelationLegend"></div>
+                <div class="chart-frame inbody-correlation-frame">
+                  <canvas id="armCorrelationCanvas" width="960" height="520"></canvas>
+                </div>
+              </article>
+
+              <article class="panel inbody-correlation-panel">
+                <div class="panel-head">
+                  <div>
+                    <p class="eyebrow">Trunk Balance</p>
+                    <h2>体幹筋肉量と胸・背中セット数</h2>
+                  </div>
+                </div>
+                <div class="correlation-legend" id="trunkCorrelationLegend"></div>
+                <div class="chart-frame inbody-correlation-frame">
+                  <canvas id="trunkCorrelationCanvas" width="960" height="520"></canvas>
+                </div>
+              </article>
+            </section>
           </section>
         </div>
       </div>
