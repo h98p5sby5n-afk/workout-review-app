@@ -649,33 +649,6 @@ function renderSummary(workouts) {
 }
 
 function renderBodySummary(workouts) {
-  const stats = new Map();
-  flattenExercises(workouts).forEach((record) => {
-    const item = stats.get(record.body) || {
-      body: record.body,
-      sessions: new Set(),
-      sets: 0,
-      reps: 0,
-      volumeKg: 0,
-      timeSec: 0,
-      distanceM: 0,
-      exercises: new Map()
-    };
-    item.sessions.add(record.workout.id);
-    item.sets += record.metrics.sets;
-    item.reps += record.metrics.reps;
-    item.volumeKg += record.metrics.volumeKg;
-    item.timeSec += record.metrics.timeSec;
-    item.distanceM += record.metrics.distanceM;
-    item.exercises.set(record.name, (item.exercises.get(record.name) || 0) + 1);
-    stats.set(record.body, item);
-  });
-
-  const items = BODY_ORDER.map((body) => stats.get(body)).filter(Boolean);
-  const maxMetric = Math.max(
-    1,
-    ...items.map((item) => (item.body === "有酸素" ? item.timeSec / 60 : item.volumeKg))
-  );
   const mainSetStats = getRollingMainSetStats(workouts);
   const undefinedDetails = getUndefinedMuscleDetailExercises(workouts);
 
@@ -735,30 +708,7 @@ function renderBodySummary(workouts) {
     </div>
   `;
 
-  const bodyCardsMarkup = items
-    .map((item) => {
-      const metric = item.body === "有酸素" ? item.timeSec / 60 : item.volumeKg;
-      const top = [...item.exercises.entries()].sort((a, b) => b[1] - a[1])[0];
-      const value =
-        item.body === "有酸素"
-          ? `${numberFmt.format(metric)}分`
-          : `${formatTon(item.volumeKg)} / ${numberFmt.format(item.sets)}セット`;
-      return `
-        <div class="body-card">
-          <div>
-            <div class="body-name">${escapeHtml(item.body)}</div>
-            <div class="body-top">${top ? escapeHtml(top[0]) : ""}</div>
-          </div>
-          <div class="meter" aria-hidden="true">
-            <span style="width:${Math.max(3, (metric / maxMetric) * 100)}%; background:${BODY_COLORS[item.body]};"></span>
-          </div>
-          <div class="body-meta">${escapeHtml(value)}</div>
-        </div>
-      `;
-    })
-    .join("");
-
-  els.bodySummary.innerHTML = `${rollingMarkup}${bodyCardsMarkup}`;
+  els.bodySummary.innerHTML = rollingMarkup;
 }
 
 function renderMainSetBars(points, color, scaleMax, className = "main-set-bars", options = {}) {
