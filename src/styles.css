@@ -156,8 +156,9 @@ h3 {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(150px, 230px));
   gap: 12px;
+  justify-content: start;
   margin-bottom: 14px;
 }
 
@@ -172,8 +173,8 @@ h3 {
 }
 
 .kpi-card {
-  min-height: 118px;
-  padding: 16px;
+  min-height: 104px;
+  padding: 14px;
 }
 
 .kpi-label {
@@ -186,7 +187,7 @@ h3 {
 .kpi-value {
   margin-bottom: 8px;
   color: var(--strong);
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 800;
   line-height: 1.05;
 }
@@ -237,6 +238,23 @@ select,
 
 .panel.wide {
   margin-top: 14px;
+}
+
+.muscle-split-panel {
+  margin-bottom: 14px;
+}
+
+.muscle-split-panel .body-summary {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-items: start;
+}
+
+.muscle-split-panel .main-set-summary {
+  grid-column: 1 / -1;
+}
+
+.muscle-split-panel .main-set-summary-rows {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 }
 
 .trend-panel {
@@ -755,7 +773,7 @@ tbody tr:hover {
 
 @media (max-width: 1120px) {
   .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .dashboard-grid {
@@ -788,6 +806,8 @@ tbody tr:hover {
   }
 
   .summary-grid,
+  .muscle-split-panel .body-summary,
+  .muscle-split-panel .main-set-summary-rows,
   .control-strip,
   .exercise-cards,
   .timeline {
@@ -975,7 +995,7 @@ tbody tr:hover {
 .back-to-body {
   position: fixed;
   right: max(18px, env(safe-area-inset-right));
-  bottom: max(18px, env(safe-area-inset-bottom));
+  bottom: max(18px, calc(25vh - 29px + env(safe-area-inset-bottom)));
   z-index: 20;
   width: 58px;
   height: 58px;
@@ -1130,7 +1150,7 @@ tbody tr:hover {
 @media (max-width: 740px) {
   .back-to-body {
     right: max(14px, env(safe-area-inset-right));
-    bottom: max(14px, env(safe-area-inset-bottom));
+    bottom: max(14px, calc(25vh - 27px + env(safe-area-inset-bottom)));
     width: 54px;
     height: 54px;
   }

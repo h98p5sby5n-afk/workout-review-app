@@ -613,12 +613,9 @@ function renderSummary(workouts) {
   const strengthWorkouts = workouts.filter((workout) => workout.metrics.strengthExerciseCount > 0);
   const records = flattenExercises(workouts);
   const strengthRecords = records.filter((record) => record.type === "strength");
-  const cardioRecords = records.filter((record) => record.type === "cardio");
   const totalVolume = sum(workouts.map((workout) => workout.metrics), "volumeKg");
   const totalSets = sum(strengthRecords.map((record) => record.metrics), "sets");
   const dateRange = getDateRangeLabel(workouts);
-  const topExercise = buildExerciseStats(workouts).find((stat) => stat.type === "strength");
-  const cardioMinutes = sum(cardioRecords.map((record) => record.metrics), "timeSec") / 60;
 
   const cards = [
     {
@@ -635,15 +632,6 @@ function renderSummary(workouts) {
       label: "総ボリューム",
       value: formatTon(totalVolume),
       sub: `${numberFmt.format(totalSets)}セット / ${numberFmt.format(sum(strengthRecords.map((r) => r.metrics), "reps"))}レップ`
-    },
-    {
-      label: "最多種目",
-      value: topExercise ? truncate(topExercise.name, 16) : "なし",
-      sub: topExercise
-        ? `${topExercise.body} / ${numberFmt.format(topExercise.sessions)}回 / ${formatTon(topExercise.volumeKg)}`
-        : cardioMinutes
-          ? `有酸素 ${numberFmt.format(cardioMinutes)}分`
-          : "CSVを読み込めませんでした"
     }
   ];
 
