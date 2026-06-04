@@ -18,156 +18,214 @@
         <div class="brand-block">
           <span class="brand-mark" aria-hidden="true"></span>
           <div>
-            <p class="eyebrow">Advagym CSV Review</p>
+            <p class="eyebrow">Fitness CSV Review</p>
             <h1>筋トレ履歴ダッシュボード</h1>
           </div>
         </div>
-        <div class="import-panel" id="dropZone">
-          <input id="csvInput" type="file" accept=".csv,text/csv" />
-          <button class="primary-button" id="fileButton" type="button">CSVを選択</button>
-          <span id="fileName" class="file-name">サンプルデータ</span>
+        <div class="import-stack">
+          <div class="import-panel" id="dropZone">
+            <input id="csvInput" type="file" accept=".csv,text/csv" />
+            <div class="import-copy">
+              <span>Life Fitness</span>
+              <strong>トレーニング履歴</strong>
+            </div>
+            <button class="primary-button" id="fileButton" type="button">CSVを選択</button>
+            <span id="fileName" class="file-name">サンプルデータ</span>
+          </div>
+          <div class="import-panel inbody-import" id="inbodyDropZone">
+            <input id="inbodyCsvInput" type="file" accept=".csv,text/csv" />
+            <div class="import-copy">
+              <span>InBody</span>
+              <strong>体組成データ</strong>
+            </div>
+            <button class="primary-button inbody-button" id="inbodyFileButton" type="button">CSVを選択</button>
+            <span id="inbodyFileName" class="file-name">未読み込み</span>
+          </div>
         </div>
       </header>
 
-      <section class="summary-grid" id="summaryGrid" aria-live="polite"></section>
+      <nav class="page-tabs" aria-label="ダッシュボード切替">
+        <button class="page-tab active" type="button" data-page="training" aria-selected="true">トレーニング</button>
+        <button class="page-tab" type="button" data-page="inbody" aria-selected="false">体組成</button>
+      </nav>
 
-      <section class="control-strip period-strip" aria-label="フィルター">
-        <label>
-          期間
-          <select id="rangeSelect">
-            <option value="all">全期間</option>
-            <option value="30">直近30日</option>
-            <option value="60">直近60日</option>
-            <option value="90">直近90日</option>
-          </select>
-        </label>
-        <div class="hidden-controls" aria-hidden="true">
-          <select id="bodySelect"></select>
-          <select id="exerciseSelect"></select>
-        </div>
-      </section>
+      <div class="page-viewport" id="pageViewport">
+        <div class="page-track" id="pageTrack">
+          <section class="dashboard-page training-page" data-page-panel="training">
+            <section class="summary-grid" id="summaryGrid" aria-live="polite"></section>
 
-      <section class="panel muscle-split-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Muscle Split</p>
-            <h2>部位別サマリー</h2>
-          </div>
-        </div>
-        <div id="bodySummary" class="body-summary"></div>
-      </section>
-
-      <section class="panel body-explorer">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Body Part</p>
-            <h2>部位から種目を選ぶ</h2>
-          </div>
-        </div>
-        <div id="bodyTabs" class="body-tabs" role="tablist" aria-label="部位"></div>
-        <div id="exerciseCards" class="exercise-cards"></div>
-      </section>
-
-      <section class="dashboard-grid">
-        <article class="panel trend-panel" id="trendPanel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Progress</p>
-              <h2 id="trendTitle">種目推移</h2>
-            </div>
-            <div id="trendStat" class="mini-stat"></div>
-          </div>
-          <div class="chart-stack">
-            <div class="chart-layer">
-              <div class="chart-layer-head">
-                <strong>総合スコア</strong>
-                <span>推定1RM</span>
+            <section class="control-strip period-strip" aria-label="フィルター">
+              <label>
+                期間
+                <select id="rangeSelect">
+                  <option value="all">全期間</option>
+                  <option value="30">直近30日</option>
+                  <option value="60">直近60日</option>
+                  <option value="90">直近90日</option>
+                </select>
+              </label>
+              <div class="hidden-controls" aria-hidden="true">
+                <select id="bodySelect"></select>
+                <select id="exerciseSelect"></select>
               </div>
-              <div class="chart-frame score">
-                <canvas id="scoreCanvas" width="960" height="260"></canvas>
-              </div>
-            </div>
-            <div class="chart-layer">
-              <div class="chart-layer-head">
-                <strong>回数推移</strong>
-                <span>メインセットの回数</span>
-              </div>
-              <div class="chart-frame bubble">
-                <canvas id="bubbleCanvas" width="960" height="260"></canvas>
-              </div>
-            </div>
-            <div class="chart-layer">
-              <div class="chart-layer-head">
-                <strong>重量推移</strong>
-                <span>メインセットの重量</span>
-              </div>
-              <div class="chart-frame reps">
-                <canvas id="repsCanvas" width="960" height="260"></canvas>
-              </div>
-            </div>
-            <div id="chartTooltip" class="chart-tooltip" hidden></div>
-          </div>
-        </article>
+            </section>
 
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Weekly Load</p>
-              <h2>週次の量と頻度</h2>
-            </div>
-          </div>
-          <div class="chart-frame compact">
-            <canvas id="weeklyCanvas" width="720" height="280"></canvas>
-          </div>
-        </article>
+            <section class="panel muscle-split-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Muscle Split</p>
+                  <h2>部位別サマリー</h2>
+                </div>
+              </div>
+              <div id="bodySummary" class="body-summary"></div>
+            </section>
 
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Highlights</p>
-              <h2>振り返りメモ</h2>
-            </div>
-          </div>
-          <div id="insights" class="insight-list"></div>
-        </article>
-      </section>
+            <section class="panel body-explorer">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Body Part</p>
+                  <h2>部位から種目を選ぶ</h2>
+                </div>
+              </div>
+              <div id="bodyTabs" class="body-tabs" role="tablist" aria-label="部位"></div>
+              <div id="exerciseCards" class="exercise-cards"></div>
+            </section>
 
-      <section class="panel wide">
-        <div class="panel-head table-head">
-          <div>
-            <p class="eyebrow">Exercise Table</p>
-            <h2>種目別の変化</h2>
-          </div>
-          <input id="searchInput" class="search-input" type="search" placeholder="種目検索" />
+            <section class="dashboard-grid">
+              <article class="panel trend-panel" id="trendPanel">
+                <div class="panel-head">
+                  <div>
+                    <p class="eyebrow">Progress</p>
+                    <h2 id="trendTitle">種目推移</h2>
+                  </div>
+                  <div id="trendStat" class="mini-stat"></div>
+                </div>
+                <div class="chart-stack">
+                  <div class="chart-layer">
+                    <div class="chart-layer-head">
+                      <strong>総合スコア</strong>
+                      <span>推定1RM</span>
+                    </div>
+                    <div class="chart-frame score">
+                      <canvas id="scoreCanvas" width="960" height="260"></canvas>
+                    </div>
+                  </div>
+                  <div class="chart-layer">
+                    <div class="chart-layer-head">
+                      <strong>回数推移</strong>
+                      <span>メインセットの回数</span>
+                    </div>
+                    <div class="chart-frame bubble">
+                      <canvas id="bubbleCanvas" width="960" height="260"></canvas>
+                    </div>
+                  </div>
+                  <div class="chart-layer">
+                    <div class="chart-layer-head">
+                      <strong>重量推移</strong>
+                      <span>メインセットの重量</span>
+                    </div>
+                    <div class="chart-frame reps">
+                      <canvas id="repsCanvas" width="960" height="260"></canvas>
+                    </div>
+                  </div>
+                  <div id="chartTooltip" class="chart-tooltip" hidden></div>
+                </div>
+              </article>
+
+              <article class="panel">
+                <div class="panel-head">
+                  <div>
+                    <p class="eyebrow">Weekly Load</p>
+                    <h2>週次の量と頻度</h2>
+                  </div>
+                </div>
+                <div class="chart-frame compact">
+                  <canvas id="weeklyCanvas" width="720" height="280"></canvas>
+                </div>
+              </article>
+
+              <article class="panel">
+                <div class="panel-head">
+                  <div>
+                    <p class="eyebrow">Highlights</p>
+                    <h2>振り返りメモ</h2>
+                  </div>
+                </div>
+                <div id="insights" class="insight-list"></div>
+              </article>
+            </section>
+
+            <section class="panel wide">
+              <div class="panel-head table-head">
+                <div>
+                  <p class="eyebrow">Exercise Table</p>
+                  <h2>種目別の変化</h2>
+                </div>
+                <input id="searchInput" class="search-input" type="search" placeholder="種目検索" />
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>種目</th>
+                      <th>部位</th>
+                      <th>細分類</th>
+                      <th>回数</th>
+                      <th>セット</th>
+                      <th>総量</th>
+                      <th>最大重量</th>
+                      <th>推定1RM</th>
+                      <th>初回→最新</th>
+                      <th>最終日</th>
+                    </tr>
+                  </thead>
+                  <tbody id="exerciseTable"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="timeline-section">
+              <div class="section-title">
+                <p class="eyebrow">Menu Timeline</p>
+                <h2>メニューの変遷</h2>
+              </div>
+              <div id="timeline" class="timeline"></div>
+            </section>
+          </section>
+
+          <section class="dashboard-page inbody-page" data-page-panel="inbody">
+            <section class="summary-grid inbody-summary-grid" id="inbodySummaryGrid" aria-live="polite"></section>
+
+            <section class="control-strip period-strip" aria-label="InBodyフィルター">
+              <label>
+                期間
+                <select id="inbodyRangeSelect">
+                  <option value="all">全期間</option>
+                  <option value="30">直近30日</option>
+                  <option value="60">直近60日</option>
+                  <option value="90">直近90日</option>
+                  <option value="180">直近180日</option>
+                </select>
+              </label>
+            </section>
+
+            <section class="panel inbody-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">InBody Progress</p>
+                  <h2>体組成成分の推移</h2>
+                </div>
+                <div id="inbodyStat" class="mini-stat"></div>
+              </div>
+              <div id="inbodyMetricTabs" class="metric-tabs" role="tablist" aria-label="体組成項目"></div>
+              <div class="chart-frame inbody-chart-frame">
+                <canvas id="inbodyCanvas" width="960" height="420"></canvas>
+              </div>
+              <div id="inbodyTooltip" class="chart-tooltip" hidden></div>
+            </section>
+          </section>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>種目</th>
-                <th>部位</th>
-                <th>細分類</th>
-                <th>回数</th>
-                <th>セット</th>
-                <th>総量</th>
-                <th>最大重量</th>
-                <th>推定1RM</th>
-                <th>初回→最新</th>
-                <th>最終日</th>
-              </tr>
-            </thead>
-            <tbody id="exerciseTable"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="timeline-section">
-        <div class="section-title">
-          <p class="eyebrow">Menu Timeline</p>
-          <h2>メニューの変遷</h2>
-        </div>
-        <div id="timeline" class="timeline"></div>
-      </section>
+      </div>
     </main>
     <button id="backToBodyButton" class="back-to-body" type="button" aria-label="部位選択に戻る">TOP</button>
 

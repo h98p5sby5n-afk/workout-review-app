@@ -87,10 +87,35 @@ const METRIC_LABELS = {
   sets: "セット数"
 };
 
+const INBODY_METRICS = {
+  weight: {
+    label: "体重",
+    unit: "kg",
+    color: "#1f7a83",
+    aliases: [/体重/, /weight/, /^wt$/]
+  },
+  skeletalMuscle: {
+    label: "骨格筋量",
+    unit: "kg",
+    color: "#3b6ea8",
+    aliases: [/骨格筋量/, /skeletalmuscle/, /skeletal.*muscle/, /\bsmm\b/, /musclemass/]
+  },
+  bodyFatPercent: {
+    label: "体脂肪率",
+    unit: "%",
+    color: "#ba4a4a",
+    aliases: [/体脂肪率/, /percentbodyfat/, /bodyfatpercent/, /\bpbf\b/, /fatpercent/, /bodyfat.*%/]
+  }
+};
+const INBODY_METRIC_KEYS = Object.keys(INBODY_METRICS);
+const INBODY_EMPTY_FILE_NAME = "未読み込み";
+
 const DEFAULT_CSV_PATH = "./data/sample.csv";
 const DEFAULT_CSV_NAME = "サンプルデータ";
 const STORED_CSV_KEY = "workout-review.csvText.v1";
 const STORED_CSV_NAME_KEY = "workout-review.csvName.v1";
+const STORED_INBODY_CSV_KEY = "workout-review.inbodyCsvText.v1";
+const STORED_INBODY_CSV_NAME_KEY = "workout-review.inbodyCsvName.v1";
 
 const state = {
   workouts: [],
@@ -100,6 +125,12 @@ const state = {
   exercise: "",
   metric: "mainWork",
   search: "",
+  page: "training",
+  inbodyRecords: [],
+  inbodyFileName: INBODY_EMPTY_FILE_NAME,
+  inbodyRange: "all",
+  inbodyMetric: "weight",
+  inbodyPoints: [],
   trendPoints: [],
   chartPoints: { score: [], mainReps: [], mainWeight: [] }
 };
@@ -128,6 +159,19 @@ const els = {
   fileButton: document.querySelector("#fileButton"),
   fileName: document.querySelector("#fileName"),
   dropZone: document.querySelector("#dropZone"),
+  pageTrack: document.querySelector("#pageTrack"),
+  pageViewport: document.querySelector("#pageViewport"),
+  pageTabs: document.querySelectorAll(".page-tab"),
+  inbodyCsvInput: document.querySelector("#inbodyCsvInput"),
+  inbodyFileButton: document.querySelector("#inbodyFileButton"),
+  inbodyFileName: document.querySelector("#inbodyFileName"),
+  inbodyDropZone: document.querySelector("#inbodyDropZone"),
+  inbodySummaryGrid: document.querySelector("#inbodySummaryGrid"),
+  inbodyRangeSelect: document.querySelector("#inbodyRangeSelect"),
+  inbodyMetricTabs: document.querySelector("#inbodyMetricTabs"),
+  inbodyCanvas: document.querySelector("#inbodyCanvas"),
+  inbodyStat: document.querySelector("#inbodyStat"),
+  inbodyTooltip: document.querySelector("#inbodyTooltip"),
   backToBodyButton: document.querySelector("#backToBodyButton"),
   bodyExplorer: document.querySelector(".body-explorer")
 };
@@ -146,7 +190,7 @@ const shortDateFmt = new Intl.DateTimeFormat("ja-JP", {
   weekday: "short"
 });
 
-function parseDelimitedLine(line) {
+function parseDelimitedLine(line, delimiter = ";") {
   const cells = [];
   let current = "";
   let inQuotes = false;
@@ -160,7 +204,7 @@ function parseDelimitedLine(line) {
       } else {
         inQuotes = !inQuotes;
       }
-    } else if (char === ";" && !inQuotes) {
+    } else if (char === delimiter && !inQuotes) {
       cells.push(current.trim());
       current = "";
     } else {
@@ -171,10 +215,51 @@ function parseDelimitedLine(line) {
   return cells;
 }
 
+function parseCsvRows(text) {
+  const lines = text
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "");
+  if (!lines.length) return [];
+  const sample = lines.slice(0, 12).join("\n");
+  const delimiter = detectDelimiter(sample);
+  return lines.map((line) => parseDelimitedLine(line, delimiter));
+}
+
+function detectDelimiter(text) {
+  const candidates = [",", ";", "\t"];
+  const counts = Object.fromEntries(candidates.map((item) => [item, 0]));
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (!inQuotes && char in counts) {
+      counts[char] += 1;
+    }
+  }
+  return candidates.sort((a, b) => counts[b] - counts[a])[0];
+}
+
 function toNumber(value) {
   if (value === undefined || value === null || value === "") return null;
   const normalized = String(value).replace(",", ".");
   const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toMeasurementNumber(value) {
+  if (value === undefined || value === null) return null;
+  const cleaned = String(value)
+    .trim()
+    .replace(/[^\d.,+\-]/g, "")
+    .replace(/,/g, ".");
+  if (!cleaned || cleaned === "-" || cleaned === "+") return null;
+  const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -325,6 +410,109 @@ function parseAdvagymCsv(text) {
   return workouts.sort((a, b) => b.date - a.date);
 }
 
+function parseInBodyCsv(text) {
+  const rows = parseCsvRows(text).filter((row) => row.some((cell) => String(cell || "").trim()));
+  if (!rows.length) return [];
+
+  const headerMatch = rows
+    .slice(0, 30)
+    .map((row, index) => {
+      const columns = detectInBodyColumns(row);
+      const metricCount = INBODY_METRIC_KEYS.filter((key) => isColumnIndex(columns[key])).length;
+      const score = (isColumnIndex(columns.date) ? 2 : 0) + metricCount;
+      return { index, columns, score };
+    })
+    .sort((a, b) => b.score - a.score)[0];
+
+  if (!headerMatch || headerMatch.score < 3) return [];
+
+  const records = rows
+    .slice(headerMatch.index + 1)
+    .map((row) => {
+      const date = parseInBodyDate(row[headerMatch.columns.date]);
+      if (!date) return null;
+      const metrics = {};
+      INBODY_METRIC_KEYS.forEach((key) => {
+        const index = headerMatch.columns[key];
+        metrics[key] = isColumnIndex(index) ? toMeasurementNumber(row[index]) : null;
+      });
+      if (!INBODY_METRIC_KEYS.some((key) => Number.isFinite(metrics[key]))) return null;
+      return {
+        date,
+        dateKey: `${localDateKey(date)}-${date.getHours()}-${date.getMinutes()}`,
+        ...metrics
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.date - b.date);
+
+  const byDate = new Map();
+  records.forEach((record) => byDate.set(record.dateKey, record));
+  return [...byDate.values()].sort((a, b) => a.date - b.date);
+}
+
+function detectInBodyColumns(headers) {
+  const normalized = headers.map((header) => normalizeHeader(header));
+  const columns = {
+    date: findInBodyColumn(normalized, [/測定日時/, /測定日/, /日時/, /日付/, /date/, /datetime/, /testdate/])
+  };
+  INBODY_METRIC_KEYS.forEach((key) => {
+    columns[key] = findInBodyColumn(normalized, INBODY_METRICS[key].aliases, key);
+  });
+  return columns;
+}
+
+function findInBodyColumn(normalizedHeaders, aliases, metricKey = "") {
+  return normalizedHeaders.findIndex((header) => {
+    if (!header) return false;
+    if (metricKey === "bodyFatPercent" && /mass|量|kg/.test(header) && !/%|率|percent|pbf/.test(header)) {
+      return false;
+    }
+    if (metricKey === "weight" && /target|目標|control|調節/.test(header)) return false;
+    return aliases.some((alias) => alias.test(header));
+  });
+}
+
+function isColumnIndex(value) {
+  return Number.isInteger(value) && value >= 0;
+}
+
+function normalizeHeader(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[（）]/g, (char) => (char === "（" ? "(" : ")"))
+    .replace(/\s+/g, "")
+    .replace(/㎏/g, "kg")
+    .replace(/％/g, "%")
+    .replace(/[_.:/\\-]/g, "");
+}
+
+function parseInBodyDate(value) {
+  if (value === undefined || value === null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const normalized = raw
+    .replace(/[年月]/g, "/")
+    .replace(/[日]/g, "")
+    .replace(/[.]/g, "/")
+    .replace(/\s+/g, " ");
+  const match = normalized.match(/(\d{2,4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (match) {
+    let year = Number(match[1]);
+    if (year < 100) year += 2000;
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const hour = Number(match[4] || 0);
+    const minute = Number(match[5] || 0);
+    const second = Number(match[6] || 0);
+    const date = new Date(year, month - 1, day, hour, minute, second);
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+  const date = new Date(raw);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
 function enrichWorkouts(workouts) {
   workouts.forEach((workout) => {
     let computedVolumeKg = 0;
@@ -430,6 +618,15 @@ function getRangeWorkouts() {
   return state.workouts.filter((workout) => workout.date >= cutoff);
 }
 
+function getRangeInBodyRecords() {
+  if (!state.inbodyRecords.length) return [];
+  if (state.inbodyRange === "all") return state.inbodyRecords;
+  const latest = new Date(Math.max(...state.inbodyRecords.map((record) => record.date.getTime())));
+  const cutoff = new Date(latest);
+  cutoff.setDate(cutoff.getDate() - Number(state.inbodyRange));
+  return state.inbodyRecords.filter((record) => record.date >= cutoff);
+}
+
 function flattenExercises(workouts) {
   return workouts.flatMap((workout) =>
     workout.exercises.map((exercise) => ({
@@ -507,6 +704,7 @@ function renderAll() {
   refreshBodyOptions(rangeWorkouts);
   refreshExerciseOptions(rangeWorkouts);
   els.fileName.textContent = state.fileName;
+  els.inbodyFileName.textContent = state.inbodyFileName;
   renderSummary(rangeWorkouts);
   renderBodyTabs(rangeWorkouts);
   renderExerciseCards(rangeWorkouts);
@@ -516,6 +714,8 @@ function renderAll() {
   renderInsights(rangeWorkouts);
   renderExerciseTable(rangeWorkouts);
   renderTimeline(rangeWorkouts);
+  renderInBody();
+  renderPageState();
 }
 
 function refreshBodyOptions(workouts) {
@@ -646,6 +846,182 @@ function renderSummary(workouts) {
       `
     )
     .join("");
+}
+
+function renderInBody() {
+  const records = getRangeInBodyRecords();
+  renderInBodySummary(records);
+  renderInBodyMetricTabs(records);
+  drawInBodyChart(records);
+}
+
+function renderInBodySummary(records) {
+  const range = getDateRangeLabel(records);
+  const latest = records[records.length - 1];
+  const cards = [
+    {
+      label: "記録期間",
+      value: range.value,
+      sub: range.sub
+    },
+    {
+      label: "測定回数",
+      value: `${numberFmt.format(records.length)}回`,
+      sub: state.inbodyRecords.length
+        ? `${numberFmt.format(state.inbodyRecords.length)}件中`
+        : "InBody CSVを読み込んでください"
+    },
+    {
+      label: "最新測定",
+      value: latest ? shortDateFmt.format(latest.date) : "—",
+      sub: latest ? `${formatInBodyValue(latest.weight, "weight")} / ${formatInBodyValue(latest.bodyFatPercent, "bodyFatPercent")}` : "データなし"
+    }
+  ];
+
+  els.inbodySummaryGrid.innerHTML = cards
+    .map(
+      (card) => `
+        <article class="kpi-card">
+          <div class="kpi-label">${escapeHtml(card.label)}</div>
+          <div class="kpi-value">${escapeHtml(card.value)}</div>
+          <div class="kpi-sub">${escapeHtml(card.sub)}</div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderInBodyMetricTabs(records) {
+  const latest = records[records.length - 1] || null;
+  const first = records[0] || null;
+  els.inbodyMetricTabs.innerHTML = INBODY_METRIC_KEYS.map((key) => {
+    const metric = INBODY_METRICS[key];
+    const active = key === state.inbodyMetric ? " active" : "";
+    const latestValue = latest?.[key];
+    const delta = first && latest && Number.isFinite(latestValue) && Number.isFinite(first[key]) ? latestValue - first[key] : null;
+    return `
+      <button class="metric-tab${active}" type="button" data-inbody-metric="${escapeAttr(key)}" role="tab" aria-selected="${key === state.inbodyMetric}">
+        <span>${escapeHtml(metric.label)} (${escapeHtml(metric.unit)})</span>
+        <strong>${escapeHtml(formatInBodyNumber(latestValue))}</strong>
+        <em>${formatInBodyDelta(delta, key)}</em>
+      </button>
+    `;
+  }).join("");
+}
+
+function drawInBodyChart(records) {
+  const metricKey = state.inbodyMetric;
+  const metric = INBODY_METRICS[metricKey];
+  const { ctx, width, height } = setupCanvas(els.inbodyCanvas);
+  const pad = { left: 58, right: 58, top: 28, bottom: 46 };
+  ctx.clearRect(0, 0, width, height);
+  drawPanelBackground(ctx, width, height);
+
+  const series = records
+    .filter((record) => Number.isFinite(record[metricKey]))
+    .map((record) => ({
+      date: record.date,
+      value: record[metricKey],
+      record
+    }))
+    .sort((a, b) => a.date - b.date);
+
+  if (!series.length) {
+    drawEmptyChart(ctx, width, height, state.inbodyRecords.length ? "この期間のデータがありません" : "InBody CSVを読み込んでください");
+    state.inbodyPoints = [];
+    els.inbodyStat.innerHTML = `<strong>—</strong><span>${escapeHtml(metric.label)}</span>`;
+    return;
+  }
+
+  const values = series.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const spread = max - min || Math.max(1, max * 0.04);
+  const yMin = Math.max(0, min - spread * 0.2);
+  const yMax = max + spread * 0.2;
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const timeDomain = getTimeDomain(series.map((point) => point.date));
+  const xFor = (date) => pad.left + normalizedTimePosition(date, timeDomain) * plotW;
+  const yFor = (value) => pad.top + plotH - ((value - yMin) / (yMax - yMin || 1)) * plotH;
+  const points = series.map((point) => ({
+    x: xFor(point.date),
+    y: yFor(point.value),
+    point
+  }));
+
+  drawInBodyGrid(ctx, width, height, pad, yMin, yMax, metricKey);
+  drawMonthAxis(ctx, width, height, pad, timeDomain);
+
+  ctx.strokeStyle = "rgba(107, 117, 128, 0.28)";
+  ctx.lineWidth = 6;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y);
+    else ctx.lineTo(point.x, point.y);
+  });
+  ctx.stroke();
+
+  ctx.strokeStyle = metric.color;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y);
+    else ctx.lineTo(point.x, point.y);
+  });
+  ctx.stroke();
+
+  points.forEach((point) => {
+    ctx.beginPath();
+    ctx.fillStyle = "#fff";
+    ctx.arc(point.x, point.y, 5.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = metric.color;
+    ctx.stroke();
+  });
+
+  state.inbodyPoints = points;
+  els.inbodyStat.innerHTML = buildInBodyStat(series, metricKey);
+}
+
+function drawInBodyGrid(ctx, width, height, pad, yMin, yMax, metricKey) {
+  const plotH = height - pad.top - pad.bottom;
+  ctx.strokeStyle = "#dce4e9";
+  ctx.lineWidth = 1;
+  ctx.fillStyle = "#64717c";
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let i = 0; i <= 3; i += 1) {
+    const y = pad.top + (plotH * i) / 3;
+    const value = yMax - ((yMax - yMin) * i) / 3;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+    ctx.fillText(formatInBodyValue(value, metricKey), pad.left - 8, y);
+  }
+}
+
+function buildInBodyStat(series, metricKey) {
+  const first = series[0];
+  const latest = series[series.length - 1];
+  const delta = latest.value - first.value;
+  return `
+    <strong>${escapeHtml(formatInBodyValue(latest.value, metricKey))}</strong>
+    <span>${numberFmt.format(series.length)}回 / ${escapeHtml(formatInBodyDelta(delta, metricKey))}</span>
+  `;
+}
+
+function buildInBodyTooltip(point) {
+  const data = point.point;
+  return `
+    <strong>${escapeHtml(dateFmt.format(data.date))}</strong><br>
+    ${escapeHtml(INBODY_METRICS[state.inbodyMetric].label)}: ${escapeHtml(formatInBodyValue(data.value, state.inbodyMetric))}
+  `;
 }
 
 function renderBodySummary(workouts) {
@@ -1882,6 +2258,22 @@ function formatMetricValue(value, metric) {
   return numberFmt.format(value);
 }
 
+function formatInBodyNumber(value) {
+  return Number.isFinite(value) ? decimalFmt.format(value) : "—";
+}
+
+function formatInBodyValue(value, metricKey) {
+  if (!Number.isFinite(value)) return "—";
+  const metric = INBODY_METRICS[metricKey];
+  return `${decimalFmt.format(value)}${metric?.unit || ""}`;
+}
+
+function formatInBodyDelta(value, metricKey) {
+  if (!Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${formatInBodyValue(value, metricKey)}`;
+}
+
 function formatDelta(value, metric) {
   if (!Number.isFinite(value)) return "—";
   const cls = value >= 0 ? "delta-pos" : "delta-neg";
@@ -1916,6 +2308,12 @@ function escapeAttr(value) {
 }
 
 async function loadSample() {
+  const savedInBodyText = readStorage(STORED_INBODY_CSV_KEY);
+  const savedInBodyName = readStorage(STORED_INBODY_CSV_NAME_KEY);
+  if (savedInBodyText) {
+    loadInBodyCsv(savedInBodyText, savedInBodyName || "保存済みInBody CSV", { persist: false, shouldRender: false });
+  }
+
   const savedText = readStorage(STORED_CSV_KEY);
   const savedName = readStorage(STORED_CSV_NAME_KEY);
   if (savedText) {
@@ -1947,6 +2345,23 @@ function loadCsv(text, fileName, options = {}) {
   renderAll();
 }
 
+function loadInBodyCsv(text, fileName, options = {}) {
+  const records = parseInBodyCsv(text);
+  state.inbodyRecords = records;
+  state.inbodyFileName = fileName;
+  state.inbodyRange = "all";
+  state.inbodyMetric = state.inbodyMetric || "weight";
+  els.inbodyRangeSelect.value = state.inbodyRange;
+  if (options.persist) {
+    writeStorage(STORED_INBODY_CSV_KEY, text);
+    writeStorage(STORED_INBODY_CSV_NAME_KEY, fileName);
+  }
+  if (options.shouldRender !== false) {
+    renderAll();
+    setPage("inbody");
+  }
+}
+
 function readStorage(key) {
   try {
     return localStorage.getItem(key);
@@ -1970,6 +2385,32 @@ function handleFile(file) {
   reader.readAsText(file, "utf-8");
 }
 
+function handleInBodyFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.addEventListener("load", () => loadInBodyCsv(String(reader.result || ""), file.name, { persist: true }));
+  reader.readAsText(file, "utf-8");
+}
+
+function setPage(page) {
+  if (!["training", "inbody"].includes(page)) return;
+  state.page = page;
+  renderPageState();
+  requestAnimationFrame(() => renderAll());
+}
+
+function renderPageState() {
+  const index = state.page === "inbody" ? 1 : 0;
+  const offset = els.pageViewport.clientWidth * index;
+  els.pageTrack.style.transform = `translateX(-${offset}px)`;
+  els.pageTabs.forEach((button) => {
+    const active = button.dataset.page === state.page;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  els.backToBodyButton.hidden = state.page !== "training";
+}
+
 function selectExercise(name, shouldScroll = false) {
   state.exercise = name;
   renderAll();
@@ -1980,9 +2421,18 @@ function selectExercise(name, shouldScroll = false) {
 
 els.fileButton.addEventListener("click", () => els.csvInput.click());
 els.csvInput.addEventListener("change", (event) => handleFile(event.target.files[0]));
+els.inbodyFileButton.addEventListener("click", () => els.inbodyCsvInput.click());
+els.inbodyCsvInput.addEventListener("change", (event) => handleInBodyFile(event.target.files[0]));
+els.pageTabs.forEach((button) => {
+  button.addEventListener("click", () => setPage(button.dataset.page));
+});
 els.rangeSelect.addEventListener("change", (event) => {
   state.range = event.target.value;
   renderAll();
+});
+els.inbodyRangeSelect.addEventListener("change", (event) => {
+  state.inbodyRange = event.target.value;
+  renderInBody();
 });
 els.bodySelect.addEventListener("change", (event) => {
   state.body = event.target.value;
@@ -2011,6 +2461,13 @@ els.exerciseCards.addEventListener("click", (event) => {
   selectExercise(button.dataset.exercise, true);
 });
 
+els.inbodyMetricTabs.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-inbody-metric]");
+  if (!button) return;
+  state.inbodyMetric = button.dataset.inbodyMetric;
+  renderInBody();
+});
+
 els.backToBodyButton.addEventListener("click", () => {
   if (!els.bodyExplorer) return;
   els.bodyExplorer.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2026,6 +2483,43 @@ els.dropZone.addEventListener("drop", (event) => {
   els.dropZone.classList.remove("dragging");
   handleFile(event.dataTransfer.files[0]);
 });
+
+els.inbodyDropZone.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  els.inbodyDropZone.classList.add("dragging");
+});
+els.inbodyDropZone.addEventListener("dragleave", () => els.inbodyDropZone.classList.remove("dragging"));
+els.inbodyDropZone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  els.inbodyDropZone.classList.remove("dragging");
+  handleInBodyFile(event.dataTransfer.files[0]);
+});
+
+let swipeStartX = null;
+let swipeStartY = null;
+els.pageViewport.addEventListener(
+  "touchstart",
+  (event) => {
+    const touch = event.touches[0];
+    swipeStartX = touch.clientX;
+    swipeStartY = touch.clientY;
+  },
+  { passive: true }
+);
+els.pageViewport.addEventListener(
+  "touchend",
+  (event) => {
+    if (swipeStartX === null || swipeStartY === null) return;
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - swipeStartX;
+    const dy = touch.clientY - swipeStartY;
+    swipeStartX = null;
+    swipeStartY = null;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+    setPage(dx < 0 ? "inbody" : "training");
+  },
+  { passive: true }
+);
 
 function bindChartTooltip(canvas, pointKey) {
   canvas.addEventListener("mousemove", (event) => {
@@ -2055,6 +2549,27 @@ function bindChartTooltip(canvas, pointKey) {
 bindChartTooltip(els.scoreCanvas, "score");
 bindChartTooltip(els.bubbleCanvas, "mainReps");
 bindChartTooltip(els.repsCanvas, "mainWeight");
+
+els.inbodyCanvas.addEventListener("mousemove", (event) => {
+  const rect = els.inbodyCanvas.getBoundingClientRect();
+  const panelRect = document.querySelector(".inbody-panel").getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const nearest = state.inbodyPoints
+    .map((point) => ({ point, distance: Math.hypot(point.x - x, point.y - y) }))
+    .sort((a, b) => a.distance - b.distance)[0];
+  if (!nearest || nearest.distance > 24) {
+    els.inbodyTooltip.hidden = true;
+    return;
+  }
+  els.inbodyTooltip.hidden = false;
+  els.inbodyTooltip.innerHTML = buildInBodyTooltip(nearest.point);
+  els.inbodyTooltip.style.left = `${event.clientX - panelRect.left}px`;
+  els.inbodyTooltip.style.top = `${event.clientY - panelRect.top}px`;
+});
+els.inbodyCanvas.addEventListener("mouseleave", () => {
+  els.inbodyTooltip.hidden = true;
+});
 
 window.addEventListener("resize", () => renderAll());
 
