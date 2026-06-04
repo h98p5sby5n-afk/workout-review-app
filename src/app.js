@@ -498,14 +498,15 @@ function parseInBodyDate(value) {
     const date = new Date((numeric - 25569) * 86400000);
     return Number.isFinite(date.getTime()) ? date : null;
   }
-  const compact = raw.match(/^(\d{4})(\d{2})(\d{2})(?:\s*(\d{2})(\d{2}))?$/);
+  const compact = raw.match(/^(\d{4})(\d{2})(\d{2})(?:\s*(\d{2})(\d{2})(\d{2})?)?$/);
   if (compact) {
     const date = new Date(
       Number(compact[1]),
       Number(compact[2]) - 1,
       Number(compact[3]),
       Number(compact[4] || 0),
-      Number(compact[5] || 0)
+      Number(compact[5] || 0),
+      Number(compact[6] || 0)
     );
     return Number.isFinite(date.getTime()) ? date : null;
   }
