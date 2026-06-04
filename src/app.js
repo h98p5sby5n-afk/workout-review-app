@@ -1095,7 +1095,7 @@ function buildCorrelationLegend(config) {
     return `<span><i style="background:${metric.color}"></i>${escapeHtml(metric.label)}</span>`;
   });
   const setItems = config.trainingBodies.map(
-    (body) => `<span><i class="bar" style="background:${BODY_COLORS[body]}"></i>${escapeHtml(body)}メインセット</span>`
+    (body) => `<span><i class="bar" style="background:${BODY_COLORS[body]}"></i>${escapeHtml(body)}週次メインセット</span>`
   );
   return [...muscleItems, ...setItems].join("");
 }
@@ -1125,19 +1125,27 @@ function drawInBodyCorrelationChart(canvas, records, config) {
   const recordDates = lineSeries.flatMap((line) => line.points.map((point) => point.date));
   const rawDomain = getRawTimeDomain(recordDates);
   const timeDomain = getTimeDomain(recordDates);
-  const monthlySets = getMonthlyBodySetBuckets(state.workouts, config.trainingBodies, rawDomain);
+  const weeklySets = getWeeklyBodySetBuckets(state.workouts, config.trainingBodies, rawDomain);
   const plotW = width - pad.left - pad.right;
   const muscleTop = pad.top;
-  const muscleBottom = Math.round(height * 0.58);
+  const muscleBottom = Math.round(height * 0.48);
   const setTop = muscleBottom + 38;
   const setBottom = height - pad.bottom;
+  const setRowGap = height < 420 ? 18 : 24;
+  const setRowHeight = Math.max(34, (setBottom - setTop - setRowGap * (config.trainingBodies.length - 1)) / config.trainingBodies.length);
+  const setRows = config.trainingBodies.map((body, index) => {
+    const rowTop = setTop + index * (setRowHeight + setRowGap);
+    return {
+      body,
+      top: rowTop,
+      bottom: rowTop + setRowHeight
+    };
+  });
   const muscleH = muscleBottom - muscleTop;
-  const setH = setBottom - setTop;
   const xFor = (date) => pad.left + normalizedTimePosition(date, timeDomain) * plotW;
 
   drawCorrelationTimeGrid(ctx, width, height, pad, timeDomain, muscleTop, setBottom);
   drawCorrelationMuscleAxis(ctx, width, pad, muscleTop, muscleBottom, lineSeries);
-  drawCorrelationSetAxis(ctx, width, pad, setTop, setBottom, monthlySets, config.trainingBodies);
 
   const muscleValues = lineSeries.flatMap((line) => line.points.map((point) => point.value));
   const muscleMin = Math.min(...muscleValues);
@@ -1146,8 +1154,6 @@ function drawInBodyCorrelationChart(canvas, records, config) {
   const yMin = Math.max(0, muscleMin - muscleSpread * 0.24);
   const yMax = muscleMax + muscleSpread * 0.24;
   const yForMuscle = (value) => muscleTop + muscleH - ((value - yMin) / (yMax - yMin || 1)) * muscleH;
-  const maxSets = Math.max(1, ...monthlySets.flatMap((bucket) => config.trainingBodies.map((body) => bucket.counts[body] || 0)));
-  const yForSets = (value) => setBottom - (value / maxSets) * setH;
 
   ctx.save();
   ctx.strokeStyle = "#cad4db";
@@ -1158,23 +1164,7 @@ function drawInBodyCorrelationChart(canvas, records, config) {
   ctx.stroke();
   ctx.restore();
 
-  monthlySets.forEach((bucket) => {
-    const monthStartX = xFor(bucket.start);
-    const monthEndX = xFor(bucket.end);
-    const slotWidth = Math.max(8, Math.min(64, Math.abs(monthEndX - monthStartX) * 0.72));
-    const barWidth = Math.max(3, slotWidth / config.trainingBodies.length - 3);
-    const centerX = xFor(bucket.mid);
-    const startX = centerX - ((barWidth + 3) * config.trainingBodies.length - 3) / 2;
-    config.trainingBodies.forEach((body, index) => {
-      const value = bucket.counts[body] || 0;
-      const barHeight = setBottom - yForSets(value);
-      const x = startX + index * (barWidth + 3);
-      ctx.fillStyle = BODY_COLORS[body] || "#64717c";
-      ctx.globalAlpha = value ? 0.82 : 0.18;
-      ctx.fillRect(x, setBottom - barHeight, barWidth, barHeight);
-      ctx.globalAlpha = 1;
-    });
-  });
+  drawCorrelationWeeklySetRows(ctx, width, pad, timeDomain, weeklySets, setRows);
 
   lineSeries.forEach((line) => {
     const points = line.points.map((point) => ({
@@ -1207,7 +1197,7 @@ function drawInBodyCorrelationChart(canvas, records, config) {
     });
   });
 
-  drawCorrelationLabels(ctx, width, height, pad, rawDomain, muscleTop, setTop);
+  drawCorrelationLabels(ctx, pad, muscleTop, setTop);
 }
 
 function getRawTimeDomain(dates) {
@@ -1218,22 +1208,16 @@ function getRawTimeDomain(dates) {
   return min === max ? { min: min - 86400000, max: max + 86400000 } : { min, max };
 }
 
-function getMonthlyBodySetBuckets(workouts, bodies, domain) {
-  const start = new Date(domain.min);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(1);
-  const end = new Date(domain.max);
-  end.setHours(0, 0, 0, 0);
-  end.setDate(1);
+function getWeeklyBodySetBuckets(workouts, bodies, domain) {
+  const start = startOfWeek(new Date(domain.min));
+  const end = startOfWeek(new Date(domain.max));
   const buckets = [];
-  for (let cursor = new Date(start); cursor <= end; cursor.setMonth(cursor.getMonth() + 1)) {
+  for (let cursor = new Date(start); cursor <= end; cursor = addDays(cursor, 7)) {
     const bucketStart = new Date(cursor);
-    const bucketEnd = new Date(cursor);
-    bucketEnd.setMonth(bucketEnd.getMonth() + 1);
-    const bucketMid = new Date(bucketStart);
-    bucketMid.setDate(15);
+    const bucketEnd = addDays(bucketStart, 7);
+    const bucketMid = new Date(bucketStart.getTime() + 3.5 * 86400000);
     buckets.push({
-      key: `${bucketStart.getFullYear()}-${bucketStart.getMonth()}`,
+      key: localDateKey(bucketStart),
       start: bucketStart,
       end: bucketEnd,
       mid: bucketMid,
@@ -1245,7 +1229,7 @@ function getMonthlyBodySetBuckets(workouts, bodies, domain) {
   workouts
     .filter((workout) => workout.date instanceof Date && workout.date.getTime() >= domain.min && workout.date.getTime() <= domain.max)
     .forEach((workout) => {
-      const key = `${workout.date.getFullYear()}-${workout.date.getMonth()}`;
+      const key = localDateKey(startOfWeek(workout.date));
       const bucket = bucketMap.get(key);
       if (!bucket) return;
       workout.exercises
@@ -1256,6 +1240,55 @@ function getMonthlyBodySetBuckets(workouts, bodies, domain) {
     });
 
   return buckets;
+}
+
+function drawCorrelationWeeklySetRows(ctx, width, pad, timeDomain, weeklySets, rows) {
+  const plotW = width - pad.left - pad.right;
+  const xFor = (date) => pad.left + normalizedTimePosition(date, timeDomain) * plotW;
+
+  rows.forEach((row) => {
+    const maxSets = Math.max(1, ...weeklySets.map((bucket) => bucket.counts[row.body] || 0));
+    const rowHeight = row.bottom - row.top;
+    const color = BODY_COLORS[row.body] || "#64717c";
+
+    ctx.save();
+    ctx.strokeStyle = "#dce4e9";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, row.top);
+    ctx.lineTo(width - pad.right, row.top);
+    ctx.moveTo(pad.left, row.bottom);
+    ctx.lineTo(width - pad.right, row.bottom);
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    ctx.font = "700 12px system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(`${row.body} / 最大${numberFmt.format(maxSets)}set`, pad.left, row.top - 4);
+
+    ctx.fillStyle = "#64717c";
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`${numberFmt.format(maxSets)}`, pad.left - 8, row.top);
+    ctx.fillText("0", pad.left - 8, row.bottom);
+    ctx.restore();
+
+    weeklySets.forEach((bucket) => {
+      const value = bucket.counts[row.body] || 0;
+      if (!value) return;
+      const weekStartX = xFor(bucket.start);
+      const weekEndX = xFor(bucket.end);
+      const barWidth = Math.max(1.2, Math.min(8, Math.abs(weekEndX - weekStartX) * 0.78));
+      const x = xFor(bucket.mid);
+      const barHeight = Math.max(2, (value / maxSets) * rowHeight);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.84;
+      ctx.fillRect(x - barWidth / 2, row.bottom - barHeight, barWidth, barHeight);
+      ctx.globalAlpha = 1;
+    });
+  });
 }
 
 function drawCorrelationTimeGrid(ctx, width, height, pad, timeDomain, top, bottom) {
@@ -1318,40 +1351,14 @@ function drawCorrelationMuscleAxis(ctx, width, pad, top, bottom, lineSeries) {
   ctx.restore();
 }
 
-function drawCorrelationSetAxis(ctx, width, pad, top, bottom, monthlySets, bodies) {
-  const maxSets = Math.max(1, ...monthlySets.flatMap((bucket) => bodies.map((body) => bucket.counts[body] || 0)));
-  const plotH = bottom - top;
-
-  ctx.save();
-  ctx.strokeStyle = "#dce4e9";
-  ctx.fillStyle = "#64717c";
-  ctx.font = "12px system-ui, sans-serif";
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
-  for (let i = 0; i <= 2; i += 1) {
-    const y = top + (plotH * i) / 2;
-    const value = Math.round(maxSets - (maxSets * i) / 2);
-    ctx.beginPath();
-    ctx.moveTo(pad.left, y);
-    ctx.lineTo(width - pad.right, y);
-    ctx.stroke();
-    ctx.fillText(`${numberFmt.format(value)}set`, pad.left - 8, y);
-  }
-  ctx.restore();
-}
-
-function drawCorrelationLabels(ctx, width, height, pad, timeDomain, muscleTop, setTop) {
+function drawCorrelationLabels(ctx, pad, muscleTop, setTop) {
   ctx.save();
   ctx.fillStyle = "#64717c";
   ctx.font = "700 12px system-ui, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
   ctx.fillText("部位別筋肉量", pad.left, muscleTop - 20);
-  ctx.fillText("月別メインセット", pad.left, setTop - 20);
-  const start = new Date(timeDomain.min);
-  const end = new Date(timeDomain.max);
-  ctx.textAlign = "right";
-  ctx.fillText(`${start.getFullYear()}/${start.getMonth() + 1} - ${end.getFullYear()}/${end.getMonth() + 1}`, width - pad.right, height - 24);
+  ctx.fillText("週次メインセット", pad.left, setTop - 20);
   ctx.restore();
 }
 
