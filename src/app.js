@@ -128,6 +128,7 @@ const state = {
   page: "training",
   inbodyRecords: [],
   inbodyFileName: INBODY_EMPTY_FILE_NAME,
+  inbodyError: "",
   inbodyRange: "all",
   inbodyMetric: "weight",
   inbodyPoints: [],
@@ -492,6 +493,22 @@ function parseInBodyDate(value) {
   if (value === undefined || value === null) return null;
   const raw = String(value).trim();
   if (!raw) return null;
+  const numeric = toMeasurementNumber(raw);
+  if (Number.isFinite(numeric) && numeric > 20000 && numeric < 80000) {
+    const date = new Date((numeric - 25569) * 86400000);
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+  const compact = raw.match(/^(\d{4})(\d{2})(\d{2})(?:\s*(\d{2})(\d{2}))?$/);
+  if (compact) {
+    const date = new Date(
+      Number(compact[1]),
+      Number(compact[2]) - 1,
+      Number(compact[3]),
+      Number(compact[4] || 0),
+      Number(compact[5] || 0)
+    );
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
   const normalized = raw
     .replace(/[年月]/g, "/")
     .replace(/[日]/g, "")
@@ -867,7 +884,9 @@ function renderInBodySummary(records) {
     {
       label: "測定回数",
       value: `${numberFmt.format(records.length)}回`,
-      sub: state.inbodyRecords.length
+      sub: state.inbodyError
+        ? state.inbodyError
+        : state.inbodyRecords.length
         ? `${numberFmt.format(state.inbodyRecords.length)}件中`
         : "InBody CSVを読み込んでください"
     },
@@ -2349,6 +2368,7 @@ function loadInBodyCsv(text, fileName, options = {}) {
   const records = parseInBodyCsv(text);
   state.inbodyRecords = records;
   state.inbodyFileName = fileName;
+  state.inbodyError = records.length ? "" : "日付・体重・骨格筋量・体脂肪率の列を見つけられませんでした";
   state.inbodyRange = "all";
   state.inbodyMetric = state.inbodyMetric || "weight";
   els.inbodyRangeSelect.value = state.inbodyRange;
@@ -2380,16 +2400,89 @@ function writeStorage(key, value) {
 
 function handleFile(file) {
   if (!file) return;
-  const reader = new FileReader();
-  reader.addEventListener("load", () => loadCsv(String(reader.result || ""), file.name, { persist: true }));
-  reader.readAsText(file, "utf-8");
+  readFileText(file, scoreWorkoutCsvText, (text) => loadCsv(text, file.name, { persist: true }));
 }
 
 function handleInBodyFile(file) {
   if (!file) return;
+  state.inbodyFileName = `${file.name} 読み込み中`;
+  state.inbodyError = "";
+  renderInBody();
+  readFileText(file, scoreInBodyCsvText, (text) => loadInBodyCsv(text, file.name, { persist: true }));
+}
+
+function readFileText(file, scoreText, onLoad) {
   const reader = new FileReader();
-  reader.addEventListener("load", () => loadInBodyCsv(String(reader.result || ""), file.name, { persist: true }));
-  reader.readAsText(file, "utf-8");
+  reader.addEventListener("load", () => {
+    const result = reader.result;
+    const text =
+      result instanceof ArrayBuffer
+        ? decodeBestText(result, scoreText)
+        : String(result || "");
+    onLoad(text);
+  });
+  reader.addEventListener("error", () => {
+    if (scoreText === scoreInBodyCsvText) {
+      state.inbodyFileName = file.name;
+      state.inbodyError = "CSVファイルを読み込めませんでした";
+      renderInBody();
+    }
+  });
+  reader.readAsArrayBuffer(file);
+}
+
+function decodeBestText(buffer, scoreText) {
+  const bytes = new Uint8Array(buffer);
+  const bomEncoding =
+    bytes[0] === 0xff && bytes[1] === 0xfe
+      ? "utf-16le"
+      : bytes[0] === 0xfe && bytes[1] === 0xff
+      ? "utf-16be"
+      : bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf
+      ? "utf-8"
+      : "";
+  const encodings = [...new Set([bomEncoding, "utf-8", "shift_jis", "utf-16le", "utf-16be"].filter(Boolean))];
+  const candidates = encodings.map((encoding) => {
+    let text = "";
+    try {
+      text = new TextDecoder(encoding).decode(bytes);
+    } catch {
+      text = "";
+    }
+    const replacementPenalty = (text.match(/\uFFFD/g) || []).length * 30;
+    const nulPenalty = (text.match(/\u0000/g) || []).length * 10;
+    return {
+      encoding,
+      text,
+      score: scoreText(text) - replacementPenalty - nulPenalty
+    };
+  });
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0]?.text || "";
+}
+
+function scoreWorkoutCsvText(text) {
+  let score = 0;
+  if (/Workout date/.test(text)) score += 50;
+  if (/Exercise name/.test(text)) score += 30;
+  if (/Weight \(kg\)/.test(text)) score += 20;
+  return score + Math.min(20, (text.match(/;/g) || []).length);
+}
+
+function scoreInBodyCsvText(text) {
+  const parsed = parseInBodyCsv(text);
+  if (parsed.length) return 100 + parsed.length * 10;
+  const rows = parseCsvRows(text).slice(0, 30);
+  const headerScore = rows.reduce((best, row) => {
+    const columns = detectInBodyColumns(row);
+    const metricCount = INBODY_METRIC_KEYS.filter((key) => isColumnIndex(columns[key])).length;
+    return Math.max(best, (isColumnIndex(columns.date) ? 2 : 0) + metricCount);
+  }, 0);
+  const keywordScore = [/体重/, /骨格筋/, /体脂肪率/, /Weight/i, /Skeletal/i, /Percent Body Fat/i, /\bPBF\b/i].reduce(
+    (total, pattern) => total + (pattern.test(text) ? 5 : 0),
+    0
+  );
+  return headerScore * 10 + keywordScore;
 }
 
 function setPage(page) {
