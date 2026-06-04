@@ -1168,7 +1168,7 @@ tbody tr:hover {
 .back-to-body {
   position: fixed;
   right: max(18px, env(safe-area-inset-right));
-  bottom: max(18px, calc(25vh - 29px + env(safe-area-inset-bottom)));
+  bottom: max(18px, calc(16.667vh - 29px + env(safe-area-inset-bottom)));
   z-index: 20;
   width: 58px;
   height: 58px;
@@ -1323,7 +1323,7 @@ tbody tr:hover {
 @media (max-width: 740px) {
   .back-to-body {
     right: max(14px, env(safe-area-inset-right));
-    bottom: max(14px, calc(25vh - 27px + env(safe-area-inset-bottom)));
+    bottom: max(14px, calc(16.667vh - 27px + env(safe-area-inset-bottom)));
     width: 54px;
     height: 54px;
   }
