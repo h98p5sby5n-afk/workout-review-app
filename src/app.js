@@ -162,6 +162,7 @@ const INBODY_CORRELATION_CHARTS = [
   }
 ];
 const INBODY_EMPTY_FILE_NAME = "未読み込み";
+const DEFAULT_INBODY_RANGE = "730";
 
 const DEFAULT_CSV_PATH = "./data/sample.csv";
 const DEFAULT_CSV_NAME = "サンプルデータ";
@@ -182,7 +183,7 @@ const state = {
   inbodyRecords: [],
   inbodyFileName: INBODY_EMPTY_FILE_NAME,
   inbodyError: "",
-  inbodyRange: "all",
+  inbodyRange: DEFAULT_INBODY_RANGE,
   inbodyMetric: "weight",
   inbodyPoints: [],
   trendPoints: [],
@@ -2725,7 +2726,7 @@ function loadInBodyCsv(text, fileName, options = {}) {
   state.inbodyRecords = records;
   state.inbodyFileName = fileName;
   state.inbodyError = records.length ? "" : "日付・体重・骨格筋量・体脂肪率の列を見つけられませんでした";
-  state.inbodyRange = "all";
+  state.inbodyRange = DEFAULT_INBODY_RANGE;
   state.inbodyMetric = state.inbodyMetric || "weight";
   els.inbodyRangeSelect.value = state.inbodyRange;
   if (options.persist) {
