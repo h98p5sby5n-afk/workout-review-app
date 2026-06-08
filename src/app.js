@@ -345,6 +345,28 @@ function classifyMuscleDetail(rawName) {
   };
 }
 
+function getMainSetCountingBodies(exercise, bodySet, detailGroups = MAIN_SET_DETAIL_GROUPS) {
+  const detail = classifyMuscleDetail(exercise.name);
+  const bodyNames = new Set();
+
+  if (bodySet.has(exercise.body)) {
+    bodyNames.add(exercise.body);
+  }
+
+  if (detail && SHARED_DETAIL_IDS.has(detail.id)) {
+    Object.entries(detailGroups).forEach(([bodyName, detailIds]) => {
+      if (bodySet.has(bodyName) && detailIds.includes(detail.id)) {
+        bodyNames.add(bodyName);
+      }
+    });
+  }
+
+  return {
+    bodyNames: [...bodyNames],
+    detail
+  };
+}
+
 function getMuscleDetailMarkup(name, body) {
   if (!DETAIL_TRACKED_BODIES.has(body)) return "";
   const detail = classifyMuscleDetail(name);
@@ -1227,6 +1249,7 @@ function getWeeklyBodySetBuckets(workouts, bodies, domain) {
   }
 
   const bucketMap = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+  const bodySet = new Set(bodies);
   workouts
     .filter((workout) => workout.date instanceof Date && workout.date.getTime() >= domain.min && workout.date.getTime() <= domain.max)
     .forEach((workout) => {
@@ -1234,9 +1257,13 @@ function getWeeklyBodySetBuckets(workouts, bodies, domain) {
       const bucket = bucketMap.get(key);
       if (!bucket) return;
       workout.exercises
-        .filter((exercise) => exercise.type === "strength" && bodies.includes(exercise.body))
+        .filter((exercise) => exercise.type === "strength")
         .forEach((exercise) => {
-          bucket.counts[exercise.body] += exercise.metrics.mainSetCount || 0;
+          const mainSetCount = exercise.metrics.mainSetCount || 0;
+          const { bodyNames } = getMainSetCountingBodies(exercise, bodySet);
+          bodyNames.forEach((bodyName) => {
+            bucket.counts[bodyName] += mainSetCount;
+          });
         });
     });
 
@@ -1591,11 +1618,13 @@ function getRollingMainSetStats(workouts, options = {}) {
     const item = dailyCounts.get(key) || makeEmptyDay();
 
     workout.exercises
-      .filter((exercise) => exercise.type === "strength" && bodySet.has(exercise.body))
+      .filter((exercise) => exercise.type === "strength")
       .forEach((exercise) => {
         const mainSetCount = exercise.metrics.mainSetCount || 0;
-        const detail = classifyMuscleDetail(exercise.name);
-        item.bodies[exercise.body] += mainSetCount;
+        const { bodyNames, detail } = getMainSetCountingBodies(exercise, bodySet, detailGroups);
+        bodyNames.forEach((bodyName) => {
+          item.bodies[bodyName] += mainSetCount;
+        });
         if (!detail) return;
         if (SHARED_DETAIL_IDS.has(detail.id) && detail.id in item.sharedDetails) {
           item.sharedDetails[detail.id] += mainSetCount;
