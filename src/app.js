@@ -998,9 +998,18 @@ function getHighlightSummaryStats() {
 }
 
 function buildHighlightSlides() {
-  const workouts = getHighlightRecentWorkouts();
+  const recentWorkouts = getHighlightRecentWorkouts();
+  const allStrengthByName = new Map();
+  flattenExercises(state.workouts)
+    .filter((record) => record.type === "strength")
+    .forEach((record) => {
+      const item = allStrengthByName.get(record.name) || [];
+      item.push(record);
+      allStrengthByName.set(record.name, item);
+    });
+
   const grouped = new Map();
-  flattenExercises(workouts)
+  flattenExercises(recentWorkouts)
     .filter((record) => record.type === "strength")
     .filter((record) => Number.isFinite(record.metrics.bestE1rmKg) || Number.isFinite(record.metrics.topWeightKg) || record.metrics.mainSet)
     .forEach((record) => {
@@ -1010,7 +1019,7 @@ function buildHighlightSlides() {
     });
 
   return [...grouped.entries()]
-    .map(([name, records]) => buildHighlightSlide(name, records))
+    .map(([name, records]) => buildHighlightSlide(name, records, allStrengthByName.get(name) || records))
     .filter(Boolean)
     .sort((a, b) => {
       const bodyDiff = getHighlightBodyRank(a.body) - getHighlightBodyRank(b.body);
@@ -1021,9 +1030,10 @@ function buildHighlightSlides() {
     });
 }
 
-function buildHighlightSlide(name, records) {
-  const sorted = records.slice().sort((a, b) => a.date - b.date);
-  if (!sorted.length) return null;
+function buildHighlightSlide(name, recentRecords, allRecords = recentRecords) {
+  const recentSorted = recentRecords.slice().sort((a, b) => a.date - b.date);
+  const sorted = allRecords.slice().sort((a, b) => a.date - b.date);
+  if (!recentSorted.length || !sorted.length) return null;
 
   let bestScore = 0;
   const scoreSeries = [];
@@ -1065,26 +1075,27 @@ function buildHighlightSlide(name, records) {
   if (!scoreSeries.length && !weightSeries.length) return null;
 
   const latest = sorted[sorted.length - 1];
+  const recentLatest = recentSorted[recentSorted.length - 1];
   const latestScore = scoreSeries[scoreSeries.length - 1] || null;
   const firstScore = scoreSeries[0] || null;
   const latestWeight = weightSeries[weightSeries.length - 1] || null;
   const latestMainSet = latest.metrics.mainSet || [...sorted].reverse().find((record) => record.metrics.mainSet)?.metrics.mainSet || null;
   const scoreMetric = scoreSeries.some((point) => point.metric === "e1rm") ? "e1rm" : "topWeight";
   const timeDomain = getTimeDomain([...scoreSeries, ...weightSeries].map((point) => point.date));
-  const sessions = new Set(sorted.map((record) => record.workout.id)).size;
-  const volumeKg = sum(sorted.map((record) => record.metrics), "volumeKg");
-  const sets = sum(sorted.map((record) => record.metrics), "sets");
-  const reps = sum(sorted.map((record) => record.metrics), "reps");
+  const sessions = new Set(recentSorted.map((record) => record.workout.id)).size;
+  const volumeKg = sum(recentSorted.map((record) => record.metrics), "volumeKg");
+  const sets = sum(recentSorted.map((record) => record.metrics), "sets");
+  const reps = sum(recentSorted.map((record) => record.metrics), "reps");
 
   return {
     name,
-    body: latest.body,
-    color: BODY_COLORS[latest.body] || "#3b6ea8",
+    body: recentLatest.body,
+    color: BODY_COLORS[recentLatest.body] || "#3b6ea8",
     sessions,
     volumeKg,
     sets,
     reps,
-    latestDate: latest.date,
+    latestDate: recentLatest.date,
     latestMainSet,
     scoreSeries,
     weightSeries,
@@ -1104,7 +1115,7 @@ function getHighlightBodyRank(body) {
 
 function openHighlightReel(startIndex = 0) {
   state.highlightSlides = buildHighlightSlides();
-  state.highlightIndex = clampIndex(startIndex, state.highlightSlides.length);
+  state.highlightIndex = boundHighlightIndex(startIndex, state.highlightSlides.length);
   state.highlightReelOpen = true;
   document.body.classList.add("reel-open");
   els.highlightReel.setAttribute("aria-hidden", "false");
@@ -1228,7 +1239,7 @@ function renderHighlightSlide(slide, index) {
 function updateHighlightReelFrame() {
   const total = state.highlightSlides.length;
   if (!total) return;
-  const index = clampIndex(state.highlightIndex, total);
+  const index = boundHighlightIndex(state.highlightIndex, total);
   state.highlightIndex = index;
   els.highlightReelSlides.style.transform = `translateX(-${index * 100}%)`;
   els.highlightReelProgress.innerHTML = state.highlightSlides
@@ -1244,14 +1255,18 @@ function updateHighlightReelFrame() {
 
 function showHighlightSlide(index) {
   if (!state.highlightSlides.length) return;
-  state.highlightIndex = clampIndex(index, state.highlightSlides.length);
+  if (index < 0 || index >= state.highlightSlides.length) {
+    closeHighlightReel();
+    return;
+  }
+  state.highlightIndex = index;
   updateHighlightReelFrame();
   restartHighlightTimer();
 }
 
-function clampIndex(index, total) {
+function boundHighlightIndex(index, total) {
   if (!total) return 0;
-  return (index + total) % total;
+  return Math.min(total - 1, Math.max(0, index));
 }
 
 function drawHighlightReelCharts() {

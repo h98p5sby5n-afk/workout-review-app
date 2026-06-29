@@ -256,6 +256,14 @@ h3 {
 .kpi-card-action {
   position: relative;
   width: 100%;
+  border-color: var(--strong);
+  border-width: 2px;
+  background:
+    linear-gradient(180deg, rgba(59, 110, 168, 0.08), rgba(47, 125, 100, 0.04)),
+    var(--surface);
+  box-shadow:
+    inset 0 0 0 1px rgba(17, 24, 32, 0.08),
+    0 20px 44px rgba(21, 33, 43, 0.12);
   cursor: pointer;
   text-align: left;
 }
@@ -266,8 +274,8 @@ h3 {
   right: 14px;
   width: 8px;
   height: 8px;
-  border-top: 2px solid var(--blue);
-  border-right: 2px solid var(--blue);
+  border-top: 3px solid var(--strong);
+  border-right: 3px solid var(--strong);
   content: "";
   transform: rotate(45deg);
 }
