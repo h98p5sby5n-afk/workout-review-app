@@ -67,6 +67,9 @@ const MUSCLE_DETAIL_RULES = [
   }
 ];
 const ACTIVE_EXERCISE_DAYS = 90;
+const HIGHLIGHT_RANGE_DAYS = 30;
+const HIGHLIGHT_REEL_INTERVAL_MS = 6500;
+const HIGHLIGHT_BODY_ORDER = ["胸", "背中", "肩", "腕", "脚", "体幹"];
 const BODY_COLORS = {
   胸: "#ba4a4a",
   背中: "#3b6ea8",
@@ -187,7 +190,15 @@ const state = {
   inbodyMetric: "weight",
   inbodyPoints: [],
   trendPoints: [],
-  chartPoints: { score: [], mainReps: [], mainWeight: [] }
+  chartPoints: { score: [], mainReps: [], mainWeight: [] },
+  highlightReelOpen: false,
+  highlightSlides: [],
+  highlightIndex: 0,
+  highlightTimer: null,
+  highlightTouch: null,
+  highlightPointer: null,
+  highlightMouse: null,
+  highlightSuppressClick: false
 };
 
 const els = {
@@ -231,6 +242,11 @@ const els = {
   trunkCorrelationCanvas: document.querySelector("#trunkCorrelationCanvas"),
   armCorrelationLegend: document.querySelector("#armCorrelationLegend"),
   trunkCorrelationLegend: document.querySelector("#trunkCorrelationLegend"),
+  highlightReel: document.querySelector("#highlightReel"),
+  highlightReelSheet: document.querySelector("#highlightReelSheet"),
+  highlightReelProgress: document.querySelector("#highlightReelProgress"),
+  highlightReelSlides: document.querySelector("#highlightReelSlides"),
+  highlightReelClose: document.querySelector("#highlightReelClose"),
   backToBodyButton: document.querySelector("#backToBodyButton"),
   bodyExplorer: document.querySelector(".body-explorer")
 };
@@ -922,11 +938,8 @@ function isActiveExercise(stat, workouts) {
 
 function renderSummary(workouts) {
   const strengthWorkouts = workouts.filter((workout) => workout.metrics.strengthExerciseCount > 0);
-  const records = flattenExercises(workouts);
-  const strengthRecords = records.filter((record) => record.type === "strength");
-  const totalVolume = sum(workouts.map((workout) => workout.metrics), "volumeKg");
-  const totalSets = sum(strengthRecords.map((record) => record.metrics), "sets");
   const dateRange = getDateRangeLabel(workouts);
+  const highlightSummary = getHighlightSummaryStats();
 
   const cards = [
     {
@@ -940,23 +953,368 @@ function renderSummary(workouts) {
       sub: `${numberFmt.format(workouts.length)}ワークアウト中`
     },
     {
-      label: "総ボリューム",
-      value: formatTon(totalVolume),
-      sub: `${numberFmt.format(totalSets)}セット / ${numberFmt.format(sum(strengthRecords.map((r) => r.metrics), "reps"))}レップ`
+      label: "今月の筋トレハイライト",
+      value: `${numberFmt.format(highlightSummary.exerciseCount)}種目`,
+      sub: `直近${numberFmt.format(HIGHLIGHT_RANGE_DAYS)}日 ${formatTon(highlightSummary.volumeKg)} / ${numberFmt.format(highlightSummary.sets)}セット`,
+      action: "highlight-reel"
     }
   ];
 
   els.summaryGrid.innerHTML = cards
     .map(
-      (card) => `
-        <article class="kpi-card">
+      (card) => {
+        const tag = card.action ? "button" : "article";
+        const attrs = card.action
+          ? ` type="button" data-summary-action="${escapeAttr(card.action)}" aria-label="${escapeAttr(`${card.label}を開く`)}"`
+          : "";
+        return `
+        <${tag} class="kpi-card${card.action ? " kpi-card-action" : ""}"${attrs}>
           <div class="kpi-label">${escapeHtml(card.label)}</div>
           <div class="kpi-value">${escapeHtml(card.value)}</div>
           <div class="kpi-sub">${escapeHtml(card.sub)}</div>
-        </article>
-      `
+        </${tag}>
+      `;
+      }
     )
     .join("");
+}
+
+function getHighlightRecentWorkouts(workouts = state.workouts) {
+  const valid = workouts.filter((workout) => workout.date instanceof Date && Number.isFinite(workout.date.getTime()));
+  if (!valid.length) return [];
+  const latest = startOfDay(new Date(Math.max(...valid.map((workout) => workout.date.getTime()))));
+  const cutoff = addDays(latest, -HIGHLIGHT_RANGE_DAYS);
+  return valid.filter((workout) => workout.date >= cutoff);
+}
+
+function getHighlightSummaryStats() {
+  const workouts = getHighlightRecentWorkouts();
+  const strengthRecords = flattenExercises(workouts).filter((record) => record.type === "strength");
+  return {
+    exerciseCount: new Set(strengthRecords.map((record) => record.name)).size,
+    volumeKg: sum(strengthRecords.map((record) => record.metrics), "volumeKg"),
+    sets: sum(strengthRecords.map((record) => record.metrics), "sets")
+  };
+}
+
+function buildHighlightSlides() {
+  const workouts = getHighlightRecentWorkouts();
+  const grouped = new Map();
+  flattenExercises(workouts)
+    .filter((record) => record.type === "strength")
+    .filter((record) => Number.isFinite(record.metrics.bestE1rmKg) || Number.isFinite(record.metrics.topWeightKg) || record.metrics.mainSet)
+    .forEach((record) => {
+      const item = grouped.get(record.name) || [];
+      item.push(record);
+      grouped.set(record.name, item);
+    });
+
+  return [...grouped.entries()]
+    .map(([name, records]) => buildHighlightSlide(name, records))
+    .filter(Boolean)
+    .sort((a, b) => {
+      const bodyDiff = getHighlightBodyRank(a.body) - getHighlightBodyRank(b.body);
+      if (bodyDiff) return bodyDiff;
+      const sessionDiff = b.sessions - a.sessions;
+      if (sessionDiff) return sessionDiff;
+      return b.latestDate - a.latestDate || a.name.localeCompare(b.name, "ja");
+    });
+}
+
+function buildHighlightSlide(name, records) {
+  const sorted = records.slice().sort((a, b) => a.date - b.date);
+  if (!sorted.length) return null;
+
+  let bestScore = 0;
+  const scoreSeries = [];
+  const weightSeries = [];
+
+  sorted.forEach((record) => {
+    const mainSet = record.metrics.mainSet;
+    const e1rm = record.metrics.bestE1rmKg;
+    const scoreValue = Number.isFinite(e1rm) ? e1rm : record.metrics.topWeightKg;
+    const isPr = Number.isFinite(scoreValue) && scoreValue > bestScore + 0.01;
+    if (Number.isFinite(scoreValue)) bestScore = Math.max(bestScore, scoreValue);
+
+    if (Number.isFinite(scoreValue)) {
+      scoreSeries.push({
+        date: record.date,
+        label: shortDateFmt.format(record.date),
+        value: scoreValue,
+        metric: Number.isFinite(e1rm) ? "e1rm" : "topWeight",
+        mainSet,
+        isPr,
+        record
+      });
+    }
+
+    if (mainSet && Number.isFinite(mainSet.weightKg) && Number.isFinite(mainSet.reps)) {
+      weightSeries.push({
+        date: record.date,
+        label: shortDateFmt.format(record.date),
+        value: mainSet.weightKg,
+        metric: "topWeight",
+        e1rm: scoreValue,
+        mainSet,
+        isPr,
+        record
+      });
+    }
+  });
+
+  if (!scoreSeries.length && !weightSeries.length) return null;
+
+  const latest = sorted[sorted.length - 1];
+  const latestScore = scoreSeries[scoreSeries.length - 1] || null;
+  const firstScore = scoreSeries[0] || null;
+  const latestWeight = weightSeries[weightSeries.length - 1] || null;
+  const latestMainSet = latest.metrics.mainSet || [...sorted].reverse().find((record) => record.metrics.mainSet)?.metrics.mainSet || null;
+  const scoreMetric = scoreSeries.some((point) => point.metric === "e1rm") ? "e1rm" : "topWeight";
+  const timeDomain = getTimeDomain([...scoreSeries, ...weightSeries].map((point) => point.date));
+  const sessions = new Set(sorted.map((record) => record.workout.id)).size;
+  const volumeKg = sum(sorted.map((record) => record.metrics), "volumeKg");
+  const sets = sum(sorted.map((record) => record.metrics), "sets");
+  const reps = sum(sorted.map((record) => record.metrics), "reps");
+
+  return {
+    name,
+    body: latest.body,
+    color: BODY_COLORS[latest.body] || "#3b6ea8",
+    sessions,
+    volumeKg,
+    sets,
+    reps,
+    latestDate: latest.date,
+    latestMainSet,
+    scoreSeries,
+    weightSeries,
+    scoreMetric,
+    timeDomain,
+    latestScoreValue: latestScore?.value ?? null,
+    bestScoreValue: scoreSeries.length ? Math.max(...scoreSeries.map((point) => point.value)) : null,
+    scoreDelta: latestScore && firstScore ? latestScore.value - firstScore.value : null,
+    latestWeightValue: latestWeight?.value ?? null
+  };
+}
+
+function getHighlightBodyRank(body) {
+  const index = HIGHLIGHT_BODY_ORDER.indexOf(body);
+  return index === -1 ? HIGHLIGHT_BODY_ORDER.length + BODY_ORDER.indexOf(body) + 1 : index;
+}
+
+function openHighlightReel(startIndex = 0) {
+  state.highlightSlides = buildHighlightSlides();
+  state.highlightIndex = clampIndex(startIndex, state.highlightSlides.length);
+  state.highlightReelOpen = true;
+  document.body.classList.add("reel-open");
+  els.highlightReel.setAttribute("aria-hidden", "false");
+  els.highlightReel.classList.add("open");
+  els.highlightReel.style.setProperty("--reel-drag-y", "0px");
+  renderHighlightReel();
+  requestAnimationFrame(() => {
+    updateHighlightReelFrame();
+    drawHighlightReelCharts();
+    restartHighlightTimer();
+  });
+}
+
+function closeHighlightReel() {
+  stopHighlightTimer();
+  state.highlightReelOpen = false;
+  state.highlightTouch = null;
+  state.highlightPointer = null;
+  state.highlightMouse = null;
+  state.highlightSuppressClick = false;
+  document.body.classList.remove("reel-open");
+  els.highlightReel.classList.remove("open", "dragging");
+  els.highlightReel.setAttribute("aria-hidden", "true");
+  els.highlightReel.style.setProperty("--reel-drag-y", "0px");
+}
+
+function renderHighlightReel() {
+  if (!state.highlightSlides.length) {
+    els.highlightReelProgress.innerHTML = "";
+    els.highlightReelSlides.style.transform = "translateX(0)";
+    els.highlightReelSlides.innerHTML = `
+      <article class="highlight-slide highlight-slide-empty">
+        <div class="highlight-slide-inner">
+          <p class="eyebrow">Monthly Highlight</p>
+          <h2>直近${numberFmt.format(HIGHLIGHT_RANGE_DAYS)}日の筋トレ種目がありません</h2>
+        </div>
+      </article>
+    `;
+    return;
+  }
+
+  els.highlightReelSlides.innerHTML = state.highlightSlides
+    .map((slide, index) => renderHighlightSlide(slide, index))
+    .join("");
+  updateHighlightReelFrame();
+}
+
+function renderHighlightSlide(slide, index) {
+  const latestMainSet = slide.latestMainSet;
+  const mainSetLabel = latestMainSet
+    ? `${numberFmt.format(latestMainSet.reps)}回 x ${decimalFmt.format(latestMainSet.weightKg)}kg`
+    : "メインセットなし";
+  const scoreSub =
+    slide.scoreSeries.length > 1
+      ? `PR ${formatKg(slide.bestScoreValue)} / ${formatDelta(slide.scoreDelta, slide.scoreMetric)}`
+      : `PR ${formatKg(slide.bestScoreValue)}`;
+  const weightSub = latestMainSet ? `最新 ${mainSetLabel}` : "重量データなし";
+
+  return `
+    <article class="highlight-slide" data-highlight-slide style="--body-color:${slide.color}; --body-tint:${tint(slide.color)};">
+      <div class="highlight-slide-inner">
+        <header class="highlight-slide-head">
+          <div>
+            <p class="eyebrow">Monthly Highlight</p>
+            <h2>${escapeHtml(slide.name)}</h2>
+          </div>
+          <div class="highlight-counter">${numberFmt.format(index + 1)} / ${numberFmt.format(state.highlightSlides.length)}</div>
+        </header>
+
+        <div class="highlight-meta-row">
+          <span>${escapeHtml(slide.body)}</span>
+          <span>${numberFmt.format(slide.sessions)}回</span>
+          <span>${numberFmt.format(slide.sets)}セット</span>
+          <span>${shortDateFmt.format(slide.latestDate)}</span>
+        </div>
+
+        <div class="highlight-score-strip">
+          <div>
+            <span>総合スコア</span>
+            <strong>${formatKg(slide.latestScoreValue)}</strong>
+            <em>${scoreSub}</em>
+          </div>
+          <div>
+            <span>重量推移</span>
+            <strong>${formatKg(slide.latestWeightValue)}</strong>
+            <em>${escapeHtml(weightSub)}</em>
+          </div>
+        </div>
+
+        <div class="highlight-chart-grid">
+          <section class="highlight-chart-panel">
+            <div class="highlight-chart-head">
+              <strong>総合スコア</strong>
+              <span>${slide.scoreMetric === "e1rm" ? "推定1RM" : "最大重量"}</span>
+            </div>
+            <div class="highlight-chart-frame">
+              <canvas data-highlight-chart="score" data-highlight-index="${index}" width="760" height="260"></canvas>
+            </div>
+          </section>
+          <section class="highlight-chart-panel">
+            <div class="highlight-chart-head">
+              <strong>重量推移</strong>
+              <span>メインセット重量</span>
+            </div>
+            <div class="highlight-chart-frame">
+              <canvas data-highlight-chart="weight" data-highlight-index="${index}" width="760" height="260"></canvas>
+            </div>
+          </section>
+        </div>
+
+        <footer class="highlight-slide-foot">
+          <span>${formatTon(slide.volumeKg)}</span>
+          <span>${numberFmt.format(slide.reps)}レップ</span>
+          <span>${escapeHtml(mainSetLabel)}</span>
+        </footer>
+      </div>
+    </article>
+  `;
+}
+
+function updateHighlightReelFrame() {
+  const total = state.highlightSlides.length;
+  if (!total) return;
+  const index = clampIndex(state.highlightIndex, total);
+  state.highlightIndex = index;
+  els.highlightReelSlides.style.transform = `translateX(-${index * 100}%)`;
+  els.highlightReelProgress.innerHTML = state.highlightSlides
+    .map((_, itemIndex) => {
+      const stateClass = itemIndex < index ? "complete" : itemIndex === index ? "active" : "";
+      return `<span class="${stateClass}"><i style="animation-duration:${HIGHLIGHT_REEL_INTERVAL_MS}ms"></i></span>`;
+    })
+    .join("");
+  els.highlightReelSlides.querySelectorAll("[data-highlight-slide]").forEach((slide, itemIndex) => {
+    slide.classList.toggle("active", itemIndex === index);
+  });
+}
+
+function showHighlightSlide(index) {
+  if (!state.highlightSlides.length) return;
+  state.highlightIndex = clampIndex(index, state.highlightSlides.length);
+  updateHighlightReelFrame();
+  restartHighlightTimer();
+}
+
+function clampIndex(index, total) {
+  if (!total) return 0;
+  return (index + total) % total;
+}
+
+function drawHighlightReelCharts() {
+  if (!state.highlightReelOpen || !state.highlightSlides.length) return;
+  state.highlightSlides.forEach((slide, index) => {
+    const scoreCanvas = els.highlightReelSlides.querySelector(`[data-highlight-chart="score"][data-highlight-index="${index}"]`);
+    const weightCanvas = els.highlightReelSlides.querySelector(`[data-highlight-chart="weight"][data-highlight-index="${index}"]`);
+    if (scoreCanvas) {
+      drawLineChart(scoreCanvas, slide.scoreSeries, {
+        metric: slide.scoreMetric,
+        color: slide.color,
+        label: slide.scoreMetric === "e1rm" ? "推定1RM" : "最大重量",
+        pointKey: `highlightScore${index}`,
+        timeDomain: slide.timeDomain
+      });
+    }
+    if (weightCanvas) {
+      drawLineChart(weightCanvas, slide.weightSeries, {
+        metric: "topWeight",
+        color: slide.color,
+        label: "メインセット重量",
+        pointKey: `highlightWeight${index}`,
+        timeDomain: slide.timeDomain
+      });
+    }
+  });
+}
+
+function restartHighlightTimer() {
+  stopHighlightTimer();
+  if (!state.highlightReelOpen || state.highlightSlides.length <= 1) return;
+  state.highlightTimer = window.setTimeout(() => {
+    showHighlightSlide(state.highlightIndex + 1);
+  }, HIGHLIGHT_REEL_INTERVAL_MS);
+}
+
+function stopHighlightTimer() {
+  if (!state.highlightTimer) return;
+  window.clearTimeout(state.highlightTimer);
+  state.highlightTimer = null;
+}
+
+function suppressNextHighlightClick() {
+  state.highlightSuppressClick = true;
+  window.setTimeout(() => {
+    state.highlightSuppressClick = false;
+  }, 350);
+}
+
+function finishHighlightDrag(dx, dy) {
+  els.highlightReel.classList.remove("dragging");
+  els.highlightReel.style.setProperty("--reel-drag-y", "0px");
+
+  if (Math.abs(dx) > 12 || Math.abs(dy) > 12) suppressNextHighlightClick();
+  if (dy > 100 && Math.abs(dy) > Math.abs(dx) * 1.1) {
+    closeHighlightReel();
+    return;
+  }
+  if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+    showHighlightSlide(dx < 0 ? state.highlightIndex + 1 : state.highlightIndex - 1);
+    return;
+  }
+  restartHighlightTimer();
 }
 
 function renderInBody() {
@@ -2899,6 +3257,12 @@ function selectExercise(name, shouldScroll = false) {
   }
 }
 
+els.summaryGrid.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-summary-action='highlight-reel']");
+  if (!button) return;
+  openHighlightReel();
+});
+
 els.fileButton.addEventListener("click", () => els.csvInput.click());
 els.csvInput.addEventListener("change", (event) => handleFile(event.target.files[0]));
 els.inbodyFileButton.addEventListener("click", () => els.inbodyCsvInput.click());
@@ -2951,6 +3315,139 @@ els.inbodyMetricTabs.addEventListener("click", (event) => {
 els.backToBodyButton.addEventListener("click", () => {
   if (!els.bodyExplorer) return;
   els.bodyExplorer.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+els.highlightReelClose.addEventListener("click", closeHighlightReel);
+els.highlightReel.addEventListener("click", (event) => {
+  if (!state.highlightReelOpen) return;
+  if (state.highlightSuppressClick) {
+    state.highlightSuppressClick = false;
+    return;
+  }
+  if (event.target.closest("#highlightReelClose")) return;
+  if (event.target.closest("[data-reel-close]")) {
+    closeHighlightReel();
+    return;
+  }
+  if (!event.target.closest("#highlightReelSheet") || !state.highlightSlides.length) return;
+  const rect = els.highlightReelSheet.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  if (x < rect.width * 0.42) {
+    showHighlightSlide(state.highlightIndex - 1);
+  } else if (x > rect.width * 0.58) {
+    showHighlightSlide(state.highlightIndex + 1);
+  }
+});
+
+els.highlightReelSheet.addEventListener(
+  "touchstart",
+  (event) => {
+    const touch = event.touches[0];
+    state.highlightTouch = {
+      x: touch.clientX,
+      y: touch.clientY,
+      dragY: 0
+    };
+    stopHighlightTimer();
+  },
+  { passive: true }
+);
+els.highlightReelSheet.addEventListener(
+  "touchmove",
+  (event) => {
+    if (!state.highlightTouch) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - state.highlightTouch.x;
+    const dy = touch.clientY - state.highlightTouch.y;
+    state.highlightTouch.dragY = Math.max(0, dy);
+    if (dy > 0 && Math.abs(dy) > Math.abs(dx)) {
+      event.preventDefault();
+      els.highlightReel.classList.add("dragging");
+      els.highlightReel.style.setProperty("--reel-drag-y", `${Math.min(180, dy)}px`);
+    }
+  },
+  { passive: false }
+);
+els.highlightReelSheet.addEventListener(
+  "touchend",
+  (event) => {
+    if (!state.highlightTouch) return;
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - state.highlightTouch.x;
+    const dy = touch.clientY - state.highlightTouch.y;
+    state.highlightTouch = null;
+    finishHighlightDrag(dx, dy);
+  },
+  { passive: true }
+);
+
+els.highlightReelSheet.addEventListener("pointerdown", (event) => {
+  if (event.pointerType === "touch" || event.pointerType === "mouse" || event.target.closest("#highlightReelClose")) return;
+  state.highlightPointer = {
+    id: event.pointerId,
+    x: event.clientX,
+    y: event.clientY
+  };
+  stopHighlightTimer();
+  els.highlightReelSheet.setPointerCapture?.(event.pointerId);
+});
+els.highlightReelSheet.addEventListener("pointermove", (event) => {
+  if (!state.highlightPointer || state.highlightPointer.id !== event.pointerId) return;
+  const dx = event.clientX - state.highlightPointer.x;
+  const dy = event.clientY - state.highlightPointer.y;
+  if (dy > 0 && Math.abs(dy) > Math.abs(dx)) {
+    els.highlightReel.classList.add("dragging");
+    els.highlightReel.style.setProperty("--reel-drag-y", `${Math.min(180, dy)}px`);
+  }
+});
+els.highlightReelSheet.addEventListener("pointerup", (event) => {
+  if (!state.highlightPointer || state.highlightPointer.id !== event.pointerId) return;
+  const dx = event.clientX - state.highlightPointer.x;
+  const dy = event.clientY - state.highlightPointer.y;
+  state.highlightPointer = null;
+  finishHighlightDrag(dx, dy);
+});
+els.highlightReelSheet.addEventListener("pointercancel", () => {
+  state.highlightPointer = null;
+  els.highlightReel.classList.remove("dragging");
+  els.highlightReel.style.setProperty("--reel-drag-y", "0px");
+  restartHighlightTimer();
+});
+
+els.highlightReelSheet.addEventListener("mousedown", (event) => {
+  if (event.button !== 0 || event.target.closest("#highlightReelClose")) return;
+  state.highlightMouse = {
+    x: event.clientX,
+    y: event.clientY
+  };
+  stopHighlightTimer();
+});
+document.addEventListener("mousemove", (event) => {
+  if (!state.highlightMouse) return;
+  const dx = event.clientX - state.highlightMouse.x;
+  const dy = event.clientY - state.highlightMouse.y;
+  if (dy > 0 && Math.abs(dy) > Math.abs(dx)) {
+    els.highlightReel.classList.add("dragging");
+    els.highlightReel.style.setProperty("--reel-drag-y", `${Math.min(180, dy)}px`);
+  }
+});
+document.addEventListener("mouseup", (event) => {
+  if (!state.highlightMouse) return;
+  const dx = event.clientX - state.highlightMouse.x;
+  const dy = event.clientY - state.highlightMouse.y;
+  state.highlightMouse = null;
+  finishHighlightDrag(dx, dy);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (!state.highlightReelOpen) return;
+  if (event.key === "Escape") {
+    closeHighlightReel();
+  } else if (event.key === "ArrowRight") {
+    showHighlightSlide(state.highlightIndex + 1);
+  } else if (event.key === "ArrowLeft") {
+    showHighlightSlide(state.highlightIndex - 1);
+  }
 });
 
 els.dropZone.addEventListener("dragover", (event) => {
@@ -3051,7 +3548,12 @@ els.inbodyCanvas.addEventListener("mouseleave", () => {
   els.inbodyTooltip.hidden = true;
 });
 
-window.addEventListener("resize", () => renderAll());
+window.addEventListener("resize", () => {
+  renderAll();
+  if (state.highlightReelOpen) {
+    requestAnimationFrame(drawHighlightReelCharts);
+  }
+});
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

@@ -10,7 +10,7 @@
     <title>筋トレレビュー</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./src/styles.css?v=21" />
+    <link rel="stylesheet" href="./src/styles.css?v=22" />
   </head>
   <body>
     <main class="app-shell">
@@ -254,8 +254,16 @@
         </div>
       </div>
     </main>
+    <div class="highlight-reel" id="highlightReel" aria-hidden="true">
+      <div class="highlight-reel-scrim" data-reel-close></div>
+      <section class="highlight-reel-sheet" id="highlightReelSheet" role="dialog" aria-modal="true" aria-label="今月の筋トレハイライト">
+        <div class="highlight-reel-progress" id="highlightReelProgress"></div>
+        <button class="highlight-reel-close" id="highlightReelClose" type="button" aria-label="閉じる">×</button>
+        <div class="highlight-reel-slides" id="highlightReelSlides"></div>
+      </section>
+    </div>
     <button id="backToBodyButton" class="back-to-body" type="button" aria-label="部位選択に戻る">BP</button>
 
-    <script src="./src/app.js?v=21" type="module"></script>
+    <script src="./src/app.js?v=22" type="module"></script>
   </body>
 </html>
