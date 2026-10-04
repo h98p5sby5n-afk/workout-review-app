@@ -1,3 +1,8 @@
+import {JournalStore} from './journal-store.js';
+import {createJournalUI} from './journal-ui.js';
+import {uid, seedEquipment, importedWorkouts, sessionWorkout} from './journal-model.js';
+let journalStore, journalUI;
+
 const BODY_ORDER = ["胸", "背中", "肩", "腕", "脚", "体幹", "有酸素", "その他"];
 const MAIN_SET_SUMMARY_BODIES = ["胸", "肩", "背中"];
 const DETAIL_TRACKED_BODIES = new Set(MAIN_SET_SUMMARY_BODIES);
@@ -167,7 +172,6 @@ const INBODY_CORRELATION_CHARTS = [
 const INBODY_EMPTY_FILE_NAME = "未読み込み";
 const DEFAULT_INBODY_RANGE = "730";
 
-const DEFAULT_CSV_PATH = "./data/sample.csv";
 const DEFAULT_CSV_NAME = "サンプルデータ";
 const STORED_CSV_KEY = "workout-review.csvText.v1";
 const STORED_CSV_NAME_KEY = "workout-review.csvName.v1";
@@ -182,7 +186,7 @@ const state = {
   exercise: "",
   metric: "mainWork",
   search: "",
-  page: "training",
+  page: ["home", "training", "inbody"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home",
   inbodyRecords: [],
   inbodyFileName: INBODY_EMPTY_FILE_NAME,
   inbodyError: "",
@@ -331,7 +335,7 @@ function toMeasurementNumber(value) {
   if (value === undefined || value === null) return null;
   const cleaned = String(value)
     .trim()
-    .replace(/[^\d.,+\-]/g, "")
+    .replace(/[^\d.,+-]/g, "")
     .replace(/,/g, ".");
   if (!cleaned || cleaned === "-" || cleaned === "+") return null;
   const parsed = Number(cleaned);
@@ -464,6 +468,11 @@ function parseAdvagymCsv(text) {
     }
     if (key === "Exercise time (min)" && currentExercise) {
       currentExercise.timeMin = toNumber(value) || 0;
+      continue;
+    }
+    if (/^(Notes?|Exercise notes?|Workout notes?|Memo)$/i.test(key)) {
+      const target = /Workout/i.test(key) ? currentWorkout : (currentExercise || currentWorkout);
+      target.notes = [target.notes, value].filter(Boolean).join("\n");
       continue;
     }
     if (key === "Set") {
@@ -827,6 +836,7 @@ function maxNullable(a, b) {
 }
 
 function renderAll() {
+  renderPageState();
   const rangeWorkouts = getRangeWorkouts();
   refreshBodyOptions(rangeWorkouts);
   refreshExerciseOptions(rangeWorkouts);
@@ -3085,60 +3095,12 @@ function escapeAttr(value) {
   return escapeHtml(value);
 }
 
-async function loadSample() {
-  const savedInBodyText = readStorage(STORED_INBODY_CSV_KEY);
-  const savedInBodyName = readStorage(STORED_INBODY_CSV_NAME_KEY);
-  if (savedInBodyText) {
-    loadInBodyCsv(savedInBodyText, savedInBodyName || "保存済みInBody CSV", { persist: false, shouldRender: false });
-  }
-
-  const savedText = readStorage(STORED_CSV_KEY);
-  const savedName = readStorage(STORED_CSV_NAME_KEY);
-  if (savedText) {
-    loadCsv(savedText, savedName || "保存済みCSV", { persist: false });
-    return;
-  }
-
-  const response = await fetch(DEFAULT_CSV_PATH);
-  if (!response.ok) throw new Error(`${DEFAULT_CSV_PATH} not found`);
-  const text = await response.text();
-  loadCsv(text, DEFAULT_CSV_NAME, { persist: false });
+function loadCsv(text, fileName) {
+  return journalUI.importCsv(text, fileName, "workout");
 }
 
-function loadCsv(text, fileName, options = {}) {
-  const workouts = parseAdvagymCsv(text);
-  state.workouts = workouts;
-  state.fileName = fileName;
-  state.range = "all";
-  state.body = "all";
-  state.exercise = "";
-  state.metric = "mainWork";
-  state.search = "";
-  els.rangeSelect.value = state.range;
-  els.searchInput.value = "";
-  if (options.persist) {
-    writeStorage(STORED_CSV_KEY, text);
-    writeStorage(STORED_CSV_NAME_KEY, fileName);
-  }
-  renderAll();
-}
-
-function loadInBodyCsv(text, fileName, options = {}) {
-  const records = parseInBodyCsv(text);
-  state.inbodyRecords = records;
-  state.inbodyFileName = fileName;
-  state.inbodyError = records.length ? "" : "日付・体重・骨格筋量・体脂肪率の列を見つけられませんでした";
-  state.inbodyRange = DEFAULT_INBODY_RANGE;
-  state.inbodyMetric = state.inbodyMetric || "weight";
-  els.inbodyRangeSelect.value = state.inbodyRange;
-  if (options.persist) {
-    writeStorage(STORED_INBODY_CSV_KEY, text);
-    writeStorage(STORED_INBODY_CSV_NAME_KEY, fileName);
-  }
-  if (options.shouldRender !== false) {
-    renderAll();
-    setPage("inbody");
-  }
+function loadInBodyCsv(text, fileName) {
+  return journalUI.importCsv(text, fileName, "inbody").then(() => setPage("inbody"));
 }
 
 function readStorage(key) {
@@ -3146,14 +3108,6 @@ function readStorage(key) {
     return localStorage.getItem(key);
   } catch {
     return null;
-  }
-}
-
-function writeStorage(key, value) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // The app can still work for the current session if browser storage is unavailable.
   }
 }
 
@@ -3178,7 +3132,7 @@ function readFileText(file, scoreText, onLoad) {
       result instanceof ArrayBuffer
         ? decodeBestText(result, scoreText)
         : String(result || "");
-    onLoad(text);
+    Promise.resolve(onLoad(text)).catch(error => { refreshJournal(); journalUI.message(error.message, true); });
   });
   reader.addEventListener("error", () => {
     if (scoreText === scoreInBodyCsvText) {
@@ -3209,6 +3163,7 @@ function decodeBestText(buffer, scoreText) {
       text = "";
     }
     const replacementPenalty = (text.match(/\uFFFD/g) || []).length * 30;
+    // eslint-disable-next-line no-control-regex -- Score NULs to detect incorrect text encodings.
     const nulPenalty = (text.match(/\u0000/g) || []).length * 10;
     return {
       encoding,
@@ -3246,23 +3201,30 @@ function scoreInBodyCsvText(text) {
 }
 
 function setPage(page) {
-  if (!["training", "inbody"].includes(page)) return;
+  if (!["home", "training", "inbody"].includes(page)) return;
+  if (location.hash !== `#${page}`) location.hash = page;
   state.page = page;
   renderPageState();
   requestAnimationFrame(() => renderAll());
 }
 
 function renderPageState() {
-  const index = state.page === "inbody" ? 1 : 0;
-  const offset = els.pageViewport.clientWidth * index;
-  els.pageTrack.style.transform = `translateX(-${offset}px)`;
-  els.pageTabs.forEach((button) => {
+  els.pageTrack.style.transform = "none";
+  document.querySelectorAll("[data-page-panel]").forEach(panel => {
+    panel.hidden = panel.dataset.pagePanel !== state.page;
+  });
+  els.pageTabs.forEach(button => {
     const active = button.dataset.page === state.page;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
+    button.setAttribute("aria-current", active ? "page" : "false");
   });
   els.backToBodyButton.hidden = state.page !== "training";
 }
+window.addEventListener("hashchange", () => {
+  state.page = ["home", "training", "inbody"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
+  renderPageState(); requestAnimationFrame(renderAll);
+});
 
 function selectExercise(name, shouldScroll = false) {
   state.exercise = name;
@@ -3279,9 +3241,9 @@ els.summaryGrid.addEventListener("click", (event) => {
 });
 
 els.fileButton.addEventListener("click", () => els.csvInput.click());
-els.csvInput.addEventListener("change", (event) => handleFile(event.target.files[0]));
+els.csvInput.addEventListener("change", (event) => { handleFile(event.target.files[0]); event.target.value = ""; });
 els.inbodyFileButton.addEventListener("click", () => els.inbodyCsvInput.click());
-els.inbodyCsvInput.addEventListener("change", (event) => handleInBodyFile(event.target.files[0]));
+els.inbodyCsvInput.addEventListener("change", (event) => { handleInBodyFile(event.target.files[0]); event.target.value = ""; });
 els.pageTabs.forEach((button) => {
   button.addEventListener("click", () => setPage(button.dataset.page));
 });
@@ -3487,32 +3449,6 @@ els.inbodyDropZone.addEventListener("drop", (event) => {
   handleInBodyFile(event.dataTransfer.files[0]);
 });
 
-let swipeStartX = null;
-let swipeStartY = null;
-els.pageViewport.addEventListener(
-  "touchstart",
-  (event) => {
-    const touch = event.touches[0];
-    swipeStartX = touch.clientX;
-    swipeStartY = touch.clientY;
-  },
-  { passive: true }
-);
-els.pageViewport.addEventListener(
-  "touchend",
-  (event) => {
-    if (swipeStartX === null || swipeStartY === null) return;
-    const touch = event.changedTouches[0];
-    const dx = touch.clientX - swipeStartX;
-    const dy = touch.clientY - swipeStartY;
-    swipeStartX = null;
-    swipeStartY = null;
-    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
-    setPage(dx < 0 ? "inbody" : "training");
-  },
-  { passive: true }
-);
-
 function bindChartTooltip(canvas, pointKey) {
   canvas.addEventListener("mousemove", (event) => {
     const rect = canvas.getBoundingClientRect();
@@ -3576,6 +3512,40 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-loadSample().catch((error) => {
-  els.summaryGrid.innerHTML = `<article class="kpi-card"><div class="kpi-label">Error</div><div class="kpi-value">CSV</div><div class="kpi-sub">${escapeHtml(error.message)}</div></article>`;
+function refreshJournal() {
+  const j = journalStore.value;
+  const workouts = [...importedWorkouts(j, parseAdvagymCsv), ...j.sessions.map(s => sessionWorkout(s,j))];
+  enrichWorkouts(workouts); annotateWorkouts(workouts);
+  state.workouts = workouts.sort((a,b) => b.date-a.date);
+  state.fileName = j.imports.length ? `${j.imports.length} CSV / 手入力 ${j.sessions.length}件` : `手入力 ${j.sessions.length}件`;
+  const measurements = new Map();
+  for (const batch of j.inbodyImports) for (const record of parseInBodyCsv(batch.text)) {
+    // Keep the earlier measurement on date collisions; both raw CSVs remain available.
+    if (!measurements.has(record.dateKey)) measurements.set(record.dateKey,record);
+  }
+  state.inbodyRecords = [...measurements.values()].sort((a,b) => a.date-b.date);
+  state.inbodyFileName = j.inbodyImports.length ? `${j.inbodyImports.length} CSV / ${measurements.size}回の測定` : INBODY_EMPTY_FILE_NAME;
+  state.inbodyError = "";
+  renderPageState(); renderAll();
+}
+
+async function initializeJournal() {
+  els.fileButton.disabled = true; els.inbodyFileButton.disabled = true;
+  journalStore = await JournalStore.open();
+  if (!journalStore.value.migrated) {
+    const workoutText = readStorage(STORED_CSV_KEY), inbodyText = readStorage(STORED_INBODY_CSV_KEY);
+    if (workoutText && !parseAdvagymCsv(workoutText).length) throw Error("保存済みCSVの読み込みに失敗しました。元の保存内容は変更していません。");
+    if (inbodyText && !parseInBodyCsv(inbodyText).length) throw Error("保存済みInBody CSVの読み込みに失敗しました。元の保存内容は変更していません。");
+    await journalStore.update(j => {
+      if (workoutText) {j.imports.push({id:uid(),name:readStorage(STORED_CSV_NAME_KEY)||"保存済みCSV",text:workoutText});seedEquipment(j,parseAdvagymCsv(workoutText));}
+      if (inbodyText) j.inbodyImports.push({id:uid(),name:readStorage(STORED_INBODY_CSV_NAME_KEY)||"保存済みInBody CSV",text:inbodyText});
+      j.migrated = true;
+    },true);
+  }
+  refreshJournal();
+  journalUI = createJournalUI({store:journalStore,root:document.querySelector('#journalHome'),getWorkouts:()=>state.workouts,changed:refreshJournal,parseWorkout:parseAdvagymCsv,parseInBody:parseInBodyCsv,navigate:setPage});
+  els.fileButton.disabled = false; els.inbodyFileButton.disabled = false;
+}
+initializeJournal().catch(error => {
+  const status = document.querySelector('#journalStatus');status.textContent = `保存領域を開けませんでした：${error.message} 元のデータは消去していません。`;status.classList.add('error');
 });

@@ -4,6 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node server.mjs"
+    "dev": "node server.mjs",
+    "lint": "eslint src server.mjs scripts tests",
+    "typecheck": "tsc -p jsconfig.json",
+    "test": "node --test",
+    "build": "node scripts/build.mjs",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "fake-indexeddb": "^6.2.5",
+    "typescript": "^5.9.3"
   }
 }

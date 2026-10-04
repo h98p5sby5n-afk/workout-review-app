@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const port = Number(process.env.PORT || 4173);
-const host = process.env.HOST || "0.0.0.0";
+const host = process.env.HOST || "127.0.0.1";
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -17,7 +17,9 @@ const types = {
 };
 
 function resolvePath(urlPath) {
-  const cleanPath = decodeURIComponent(urlPath.split("?")[0]);
+  let cleanPath;
+  try { cleanPath = decodeURIComponent(urlPath.split("?")[0]); } catch { return null; }
+  if (cleanPath.split("/").some(p => p.startsWith(".")) || (cleanPath.startsWith("/data/") && cleanPath !== "/data/sample.csv")) return null;
   const target = cleanPath === "/" ? "/index.html" : cleanPath;
   const absolute = normalize(join(root, target));
   if (!absolute.startsWith(root)) return null;
@@ -48,6 +50,6 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, host, () => {
-  console.log("Workout review app running at http://0.0.0.0:" + port + "/");
+  console.log("Workout review app running at http://" + host + ":" + port + "/");
   console.log("Local access: http://127.0.0.1:" + port + "/");
 });

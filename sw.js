@@ -1,9 +1,12 @@
-const CACHE_NAME = "workout-review-pwa-v23";
+const CACHE_NAME = "workout-review-pwa-v24";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./src/app.js",
+  "./src/journal-model.js",
+  "./src/journal-store.js",
+  "./src/journal-ui.js",
   "./src/styles.css",
   "./data/sample.csv",
   "./assets/icon.svg"
@@ -18,7 +21,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("workout-review-pwa-") && key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -26,7 +29,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
-  if (url.pathname.endsWith("/data/current.csv")) return;
+  if (url.origin !== self.location.origin || url.pathname.includes("/data/") && !url.pathname.endsWith("/sample.csv")) return;
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
@@ -40,7 +43,7 @@ self.addEventListener("fetch", (event) => {
         })
         .catch(() => cached || caches.match("./index.html"));
 
-      return cached || network;
+      return network; // Prefer current code online; fall back to the cached shell offline.
     })
   );
 });

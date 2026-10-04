@@ -2,7 +2,7 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#2f7d64" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="筋トレレビュー" />
@@ -10,7 +10,7 @@
     <title>筋トレレビュー</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./src/styles.css?v=23" />
+    <link rel="stylesheet" href="./src/styles.css?v=24" />
   </head>
   <body>
     <main class="app-shell">
@@ -18,8 +18,8 @@
         <div class="brand-block">
           <span class="brand-mark" aria-hidden="true"></span>
           <div>
-            <p class="eyebrow">Fitness CSV Review</p>
-            <h1>筋トレ履歴ダッシュボード</h1>
+            <p class="eyebrow">TRAIN • RECORD • GROW</p>
+            <h1>筋トレノート</h1>
           </div>
         </div>
         <div class="import-stack">
@@ -44,14 +44,17 @@
         </div>
       </header>
 
-      <nav class="page-tabs" aria-label="ダッシュボード切替">
-        <button class="page-tab active" type="button" data-page="training" aria-selected="true">トレーニング</button>
-        <button class="page-tab" type="button" data-page="inbody" aria-selected="false">体組成</button>
+      <p id="journalStatus" class="journal-status" role="status" aria-live="polite">端末内の記録を読み込み中…</p>
+      <nav class="page-tabs bottom-navigation" aria-label="メインナビゲーション" role="tablist">
+        <button class="page-tab active" type="button" data-page="home" role="tab" aria-controls="journalHome" aria-selected="true"><span aria-hidden="true">⌂</span>ホーム</button>
+        <button class="page-tab" type="button" data-page="training" role="tab" aria-controls="trainingPage" aria-selected="false"><span aria-hidden="true">▥</span>トレーニング履歴</button>
+        <button class="page-tab" type="button" data-page="inbody" role="tab" aria-controls="inbodyPage" aria-selected="false"><span aria-hidden="true">◉</span>体組成</button>
       </nav>
 
       <div class="page-viewport" id="pageViewport">
         <div class="page-track" id="pageTrack">
-          <section class="dashboard-page training-page" data-page-panel="training">
+          <section class="dashboard-page home-page" id="journalHome" data-page-panel="home"></section>
+          <section class="dashboard-page training-page" id="trainingPage" hidden data-page-panel="training">
             <section class="summary-grid" id="summaryGrid" aria-live="polite"></section>
 
             <section class="control-strip period-strip" aria-label="フィルター">
@@ -193,7 +196,7 @@
             </section>
           </section>
 
-          <section class="dashboard-page inbody-page" data-page-panel="inbody">
+          <section class="dashboard-page inbody-page" id="inbodyPage" hidden data-page-panel="inbody">
             <section class="summary-grid inbody-summary-grid" id="inbodySummaryGrid" aria-live="polite"></section>
 
             <section class="control-strip period-strip" aria-label="InBodyフィルター">
@@ -264,6 +267,6 @@
     </div>
     <button id="backToBodyButton" class="back-to-body" type="button" aria-label="部位選択に戻る">BP</button>
 
-    <script src="./src/app.js?v=23" type="module"></script>
+    <script src="./src/app.js?v=24" type="module"></script>
   </body>
 </html>
